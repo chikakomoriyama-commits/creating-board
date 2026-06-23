@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creating Board — Podcast 制作管理</title>
+<meta name="description" content="ポッドキャスト Creating の制作管理ボード。収録日から逆算してタスクを管理し、抜け漏れを防ぐ。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: #111;
+    color: #e8e8e8;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select, textarea, button { font-family: inherit; }
+  ::selection { background: rgba(251, 146, 60, 0.3); }
+</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const STORAGE_KEY = "creating-board-episodes";
+
+const STATUSES = [
+  { id: "draft", label: "テーマ検討中", color: "#737373", bg: "rgba(115,115,115,0.15)" },
+  { id: "cast_confirmed", label: "キャスト確定", color: "#2dd4bf", bg: "rgba(45,212,191,0.12)" },
+  { id: "talk_design", label: "トークデザイン中", color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+  { id: "pre_shared", label: "事前共有済", color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+  { id: "recorded", label: "収録済み", color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+  { id: "naming", label: "名づけ待ち", color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+  { id: "stock", label: "配信待ち（在庫）", color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+  { id: "published", label: "配信済み", color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+];
+
+const TASK_TEMPLATES = [
+  { offset: -7, label: "Danna にトークデザイン依頼", assignee: "Chica → Danna" },
+  { offset: -6, label: "ゲスト紹介文の準備", assignee: "Chica" },
+  { offset: -5, label: "ゲストへの事前共有（紹介文・ヒント）", assignee: "Chica → ゲスト" },
+  { offset: -3, label: "ゲストが問いを考える（確認）", assignee: "ゲスト" },
+  { offset: 0, label: "収録", assignee: "全員" },
+  { offset: 3, label: "収録後セルフチェック", assignee: "Chica・ジダマ・Danna・Yu" },
+  { offset: 5, label: "エピソード名づけ依頼", assignee: "Chica → 担当者" },
+  { offset: 7, label: "概要欄作成", assignee: "Chica" },
+  { offset: 10, label: "配信", assignee: "Chica" },
+];
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+function formatDate(dateStr) {
+  if (!dateStr) return "\u2014";
+  const d = new Date(dateStr + "T00:00:00");
+  const weekdays = ["\u65e5","\u6708","\u706b","\u6c34","\u6728","\u91d1","\u571f"];
+  return (d.getMonth()+1) + "/" + d.getDate() + "\uff08" + weekdays[d.getDay()] + "\uff09";
+}
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+function getMonthKey(date) {
+  return date.getFullYear() + "-" + String(date.getMonth()+1).padStart(2,"0");
+}
+function getMonthLabel(mk) {
+  const p = mk.split("-");
+  return p[0] + "\u5e74 " + parseInt(p[1]) + "\u6708";
+}
+function isOverdue(ds) {
+  if (!ds) return false;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return new Date(ds+"T00:00:00") < t;
+}
+function isToday(ds) {
+  if (!ds) return false;
+  return ds === new Date().toISOString().split("T")[0];
+}
+function daysUntil(ds) {
+  if (!ds) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(ds+"T00:00:00") - t) / 864e5);
+}
+function generateTasks(recDate, existing) {
+  existing = existing || [];
+  return TASK_TEMPLATES.map(function(t) {
+    var ex = existing.find(function(e) { return e.offset === t.offset; });
+    return { offset: t.offset, label: t.label, assignee: t.assignee, date: addDays(recDate, t.offset), done: ex ? ex.done : false };
+  });
+}
+function loadEpisodes() {
+  try { var r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; }
+  catch(e) { return []; }
+}
+function persistEpisodes(eps) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(eps)); } catch(e) { console.error(e); }
+}
+
+function Waveform({ width, height, bars, color }) {
+  width = width || 120; height = height || 28; bars = bars || 24; color = color || "rgba(251,146,60,0.5)";
+  var barW = width / bars * 0.6;
+  var gap = width / bars;
+  var rects = [];
+  for (var i = 0; i < bars; i++) {
+    var h = Math.max(4, Math.sin(i * 0.7) * height * 0.4 + height * 0.3 + Math.sin(i * 1.3) * height * 0.2);
+    rects.push(
+      React.createElement("rect", { key: i, x: i * gap, y: (height - h) / 2, width: barW, height: h, rx: barW / 2, fill: color, opacity: 0.4 + Math.abs(Math.sin(i * 0.5)) * 0.6 })
+    );
+  }
+  return React.createElement("svg", { width: width, height: height, viewBox: "0 0 " + width + " " + height }, rects);
+}
+
+function EpisodeForm({ episode, month, onSave, onDelete, onCancel }) {
+  const [form, setForm] = useState({
+    theme: episode?.theme || "",
+    cast: episode?.cast || "",
+    recordingDate: episode?.recordingDate || "",
+    status: episode?.status || "draft",
+    notes: episode?.notes || "",
+  });
+  var handleSave = function() {
+    if (!form.theme.trim()) return;
+    var tasks = form.recordingDate ? generateTasks(form.recordingDate, episode?.tasks) : [];
+    onSave({
+      ...(episode || {}), id: episode?.id || generateId(), month: month,
+      theme: form.theme.trim(), cast: form.cast.trim(),
+      recordingDate: form.recordingDate,
+      status: form.recordingDate && form.cast ? (form.status === "draft" ? "cast_confirmed" : form.status) : form.status,
+      tasks: tasks, notes: form.notes,
+    });
+  };
+  var inputStyle = {
+    width: "100%", padding: "10px 12px", background: "#1a1a1a",
+    border: "1px solid #333", borderRadius: "8px", fontSize: "14px",
+    color: "#e8e8e8", outline: "none", boxSizing: "border-box",
+  };
+  var labelStyle = { display: "block", fontSize: "11px", fontWeight: 600, color: "#888", marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.05em" };
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={onCancel}>
+      <div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"440px",border:"1px solid #282828",maxHeight:"90vh",overflowY:"auto"}} onClick={function(e){e.stopPropagation()}}>
+        <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>
+          {episode?.id ? "\u30a8\u30d4\u30bd\u30fc\u30c9\u7de8\u96c6" : "\u65b0\u3057\u3044\u30a8\u30d4\u30bd\u30fc\u30c9"}
+        </div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={labelStyle}>{"\u30c6\u30fc\u30de *"}</label>
+          <input style={inputStyle} value={form.theme} onChange={function(e){setForm({...form, theme: e.target.value})}} placeholder="\u4f8b\uff1a\u69cb\u9020\u7684\u601d\u8003\u3068\u610f\u601d\u6c7a\u5b9a" autoFocus />
+        </div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={labelStyle}>{"\u30ad\u30e3\u30b9\u30c8"}</label>
+          <input style={inputStyle} value={form.cast} onChange={function(e){setForm({...form, cast: e.target.value})}} placeholder="\u4f8b\uff1a\u7530\u4e2d\u3055\u3093" />
+        </div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={labelStyle}>{"\u53ce\u9332\u65e5"}</label>
+          <input style={{...inputStyle, colorScheme:"dark"}} type="date" value={form.recordingDate} onChange={function(e){setForm({...form, recordingDate: e.target.value})}} />
+        </div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={labelStyle}>{"\u30b9\u30c6\u30fc\u30bf\u30b9"}</label>
+          <select style={{...inputStyle, appearance:"auto"}} value={form.status} onChange={function(e){setForm({...form, status: e.target.value})}}>
+            {STATUSES.map(function(st){ return <option key={st.id} value={st.id}>{st.label}</option> })}
+          </select>
+        </div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={labelStyle}>{"\u30e1\u30e2"}</label>
+          <textarea style={{...inputStyle, minHeight:"60px", resize:"vertical"}} value={form.notes} onChange={function(e){setForm({...form, notes: e.target.value})}} placeholder="\u81ea\u7531\u30e1\u30e2" />
+        </div>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"22px"}}>
+          {episode?.id && (
+            <button style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}
+              onClick={function(){ if(confirm("\u3053\u306e\u30a8\u30d4\u30bd\u30fc\u30c9\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f")) onDelete(episode.id); }}>{"\u524a\u9664"}</button>
+          )}
+          <button style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}} onClick={onCancel}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
+          <button style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}} onClick={handleSave}>{"\u4fdd\u5b58"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskList({ tasks, onToggle }) {
+  if (!tasks || !tasks.length) return <div style={{color:"#555",fontSize:"13px",padding:"8px 0"}}>{"\u53ce\u9332\u65e5\u3092\u8a2d\u5b9a\u3059\u308b\u3068\u9006\u7b97\u30bf\u30b9\u30af\u304c\u8868\u793a\u3055\u308c\u307e\u3059"}</div>;
+  var done = tasks.filter(function(t){return t.done}).length;
+  var pct = Math.round(done / tasks.length * 100);
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"14px"}}>
+        <div style={{flex:1,height:"3px",background:"#282828",borderRadius:"2px",overflow:"hidden"}}>
+          <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#fb923c,#f97316)",borderRadius:"2px",transition:"width 0.3s"}} />
+        </div>
+        <span style={{fontSize:"11px",color:"#666",whiteSpace:"nowrap"}}>{done}/{tasks.length}</span>
+      </div>
+      {tasks.map(function(task, i) {
+        var over = !task.done && isOverdue(task.date);
+        var today = isToday(task.date);
+        return (
+          <div key={i} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"9px 0",borderBottom:"1px solid #1f1f1f",fontSize:"13px"}}>
+            <input type="checkbox" checked={task.done} onChange={function(){onToggle(i)}} style={{width:"17px",height:"17px",accentColor:"#fb923c",cursor:"pointer",marginTop:"2px",flexShrink:0}} />
+            <div style={{flex:1}}>
+              <div style={{fontWeight:500, textDecoration: task.done ? "line-through" : "none", color: task.done ? "#555" : over ? "#ef4444" : "#ddd"}}>
+                {task.label}
+                {today && !task.done && <span style={{background:"rgba(251,146,60,0.2)",color:"#fb923c",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u4eca\u65e5"}</span>}
+                {over && <span style={{background:"rgba(239,68,68,0.15)",color:"#ef4444",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u671f\u9650\u8d85\u904e"}</span>}
+              </div>
+              <div style={{fontSize:"11px",color:"#555",marginTop:"2px"}}>
+                {formatDate(task.date)}
+                {task.offset === 0 ? " \u25c9 \u53ce\u9332\u65e5" : task.offset < 0 ? " \uff08\u53ce\u9332" + Math.abs(task.offset) + "\u65e5\u524d\uff09" : " \uff08\u53ce\u9332" + task.offset + "\u65e5\u5f8c\uff09"}
+              </div>
+              <div style={{fontSize:"11px",color:"#fb923c",fontWeight:500,opacity:0.7}}>{task.assignee}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EpisodeCard({ ep, index, expanded, onToggle, onTaskToggle, onEdit }) {
+  var st = STATUSES.find(function(s){return s.id === ep.status}) || STATUSES[0];
+  var days = daysUntil(ep.recordingDate);
+  var overdueTasks = ep.tasks ? ep.tasks.filter(function(t){return !t.done && isOverdue(t.date)}).length : 0;
+  var post = ["recorded","naming","stock","published"].indexOf(ep.status) >= 0;
+  var doneTasks = ep.tasks ? ep.tasks.filter(function(t){return t.done}).length : 0;
+  var totalTasks = ep.tasks ? ep.tasks.length : 0;
+  return (
+    <div style={{background:"#181818",borderRadius:"12px",border:"1px solid #252525",overflow:"hidden",cursor:"pointer",boxShadow:expanded?"0 4px 24px rgba(0,0,0,0.3)":"none",transition:"box-shadow 0.2s"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",padding:"16px 20px",gap:"12px"}} onClick={onToggle}>
+        <div>
+          <div style={{fontSize:"15px",fontWeight:600,color:"#f5f5f5",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{color:"#555",fontSize:"12px"}}>{"#"+(index+1)}</span>
+            {ep.theme || "\uff08\u30c6\u30fc\u30de\u672a\u8a2d\u5b9a\uff09"}
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"14px",fontSize:"12px",color:"#777",marginTop:"5px"}}>
+            {ep.cast && <span>{"\ud83c\udf99 "+ep.cast}</span>}
+            {ep.recordingDate && (
+              <span style={days !== null && days < 0 && !post ? {color:"#ef4444",fontWeight:600} : {}}>
+                {"\ud83d\udcc5 "+formatDate(ep.recordingDate)}
+                {days !== null && days >= 0 && days <= 3 && !post ? " \uff08\u3042\u3068"+days+"\u65e5\uff09" : ""}
+              </span>
+            )}
+            {totalTasks > 0 && <span style={{color: doneTasks === totalTasks ? "#4ade80" : "#555"}}>{doneTasks+"/"+totalTasks+" tasks"}</span>}
+            {overdueTasks > 0 && <span style={{color:"#ef4444",fontWeight:600}}>{"\u26a0 "+overdueTasks+"\u4ef6\u8d85\u904e"}</span>}
+          </div>
+        </div>
+        <span style={{display:"inline-block",padding:"3px 12px",borderRadius:"20px",fontSize:"11px",fontWeight:600,color:st.color,background:st.bg,whiteSpace:"nowrap"}}>{st.label}</span>
+      </div>
+      {expanded && (
+        <div style={{borderTop:"1px solid #222",padding:"20px",background:"#151515"}}>
+          {ep.notes && (
+            <div style={{fontSize:"13px",color:"#888",marginBottom:"16px",padding:"10px 14px",background:"#1a1a1a",borderRadius:"8px",borderLeft:"2px solid #fb923c"}}>{ep.notes}</div>
+          )}
+          <div style={{display:"flex",alignItems:"center",gap:"8px",fontSize:"12px",fontWeight:600,color:"#888",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>
+            <span>{"\u9006\u7b97\u30bf\u30b9\u30af"}</span>
+            <div style={{flex:1,height:"1px",background:"#282828"}} />
+          </div>
+          <TaskList tasks={ep.tasks} onToggle={function(i){onTaskToggle(ep.id, i)}} />
+          <div style={{marginTop:"16px"}}>
+            <button style={{background:"#222",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"7px 16px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}
+              onClick={function(e){e.stopPropagation(); onEdit(ep);}}>{"\u7de8\u96c6"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [episodes, setEpisodes] = useState(function(){return loadEpisodes()});
+  const [currentMonth, setCurrentMonth] = useState(getMonthKey(new Date()));
+  const [expandedId, setExpandedId] = useState(null);
+  const [editingEp, setEditingEp] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+
+  var save = function(eps) { setEpisodes(eps); persistEpisodes(eps); };
+
+  var monthEps = episodes.filter(function(ep){return ep.month === currentMonth}).sort(function(a,b){
+    if (a.recordingDate && b.recordingDate) return a.recordingDate.localeCompare(b.recordingDate);
+    if (a.recordingDate) return -1;
+    if (b.recordingDate) return 1;
+    return 0;
+  });
+
+  var prevMonth = function() { var d = new Date(currentMonth+"-01"); d.setMonth(d.getMonth()-1); setCurrentMonth(getMonthKey(d)); setExpandedId(null); };
+  var nextMonth = function() { var d = new Date(currentMonth+"-01"); d.setMonth(d.getMonth()+1); setCurrentMonth(getMonthKey(d)); setExpandedId(null); };
+
+  var handleSave = function(ep) {
+    var exists = episodes.find(function(e){return e.id === ep.id});
+    save(exists ? episodes.map(function(e){return e.id === ep.id ? ep : e}) : episodes.concat([ep]));
+    setShowForm(false); setEditingEp(null); setExpandedId(ep.id);
+  };
+  var handleDelete = function(id) {
+    save(episodes.filter(function(e){return e.id !== id}));
+    setShowForm(false); setEditingEp(null); setExpandedId(null);
+  };
+  var handleTaskToggle = function(epId, idx) {
+    save(episodes.map(function(ep) {
+      if (ep.id !== epId) return ep;
+      var t = ep.tasks.slice(); t[idx] = {...t[idx], done: !t[idx].done};
+      return {...ep, tasks: t};
+    }));
+  };
+
+  var alerts = [];
+  episodes.forEach(function(ep) {
+    if (!ep.tasks) return;
+    ep.tasks.forEach(function(t) {
+      if (!t.done && (isToday(t.date) || isOverdue(t.date)))
+        alerts.push({...t, episodeTheme: ep.theme});
+    });
+  });
+
+  var sm = {
+    total: monthEps.length,
+    recorded: monthEps.filter(function(e){return ["recorded","naming","stock","published"].indexOf(e.status)>=0}).length,
+    published: monthEps.filter(function(e){return e.status==="published"}).length,
+    needs: monthEps.filter(function(e){return ["draft","cast_confirmed"].indexOf(e.status)>=0}).length,
+  };
+
+  var summaryItems = [
+    { n: sm.total, l: "\u8a08\u753b", c: "#e8e8e8" },
+    { n: sm.recorded, l: "\u53ce\u9332\u6e08", c: "#fb923c" },
+    { n: sm.published, l: "\u914d\u4fe1\u6e08", c: "#4ade80" },
+    { n: sm.needs, l: "\u8981\u5bfe\u5fdc", c: sm.needs > 0 ? "#ef4444" : "#555" },
+  ];
+
+  return (
+    <div style={{minHeight:"100vh"}}>
+      <div style={{background:"linear-gradient(135deg, #111 0%, #1a1a1a 100%)",padding:"24px 24px 20px",borderBottom:"1px solid #222",position:"sticky",top:0,zIndex:50}}>
+        <div style={{maxWidth:"800px",margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                <div style={{fontSize:"22px",fontWeight:700,letterSpacing:"-0.02em"}}>
+                  <span style={{color:"#fb923c"}}>Creating</span>
+                  <span style={{color:"#666",fontWeight:400,marginLeft:"8px"}}>Board</span>
+                </div>
+                <Waveform width={80} height={20} bars={16} />
+              </div>
+              <div style={{fontSize:"11px",color:"#555",marginTop:"2px",letterSpacing:"0.04em"}}>PODCAST PRODUCTION MANAGEMENT</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+              <button onClick={prevMonth} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2190"}</button>
+              <div style={{fontSize:"15px",fontWeight:600,color:"#ccc",minWidth:"110px",textAlign:"center"}}>{getMonthLabel(currentMonth)}</div>
+              <button onClick={nextMonth} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2192"}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:"800px",margin:"0 auto",padding:"24px 16px"}}>
+        {alerts.length > 0 && (
+          <div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:"10px",padding:"14px 18px",marginBottom:"20px",fontSize:"13px",color:"#fb923c"}}>
+            <strong>{"\u26a1 \u5bfe\u5fdc\u304c\u5fc5\u8981\uff1a"}</strong>
+            {alerts.slice(0,3).map(function(t,i) {
+              return <div key={i} style={{marginTop:"4px",color:"#ccc"}}>{(isOverdue(t.date) ? "\ud83d\udd34" : "\ud83d\udfe1") + " " + t.label + "\uff08" + t.episodeTheme + "\uff09\u2014 " + formatDate(t.date)}</div>
+            })}
+            {alerts.length > 3 && <div style={{marginTop:"4px",color:"#888"}}>{"\u307b\u304b " + (alerts.length-3) + " \u4ef6"}</div>}
+          </div>
+        )}
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:"10px",marginBottom:"24px"}}>
+          {summaryItems.map(function(item, i) {
+            return (
+              <div key={i} style={{background:"#181818",borderRadius:"10px",border:"1px solid #222",padding:"14px",textAlign:"center"}}>
+                <div style={{fontSize:"24px",fontWeight:700,color:item.c,fontVariantNumeric:"tabular-nums"}}>{item.n}</div>
+                <div style={{fontSize:"10px",color:"#666",marginTop:"2px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{item.l}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
+          <div style={{fontSize:"14px",fontWeight:600,color:"#777"}}>{getMonthLabel(currentMonth) + " \u306e\u30b3\u30f3\u30c6\u30f3\u30c4"}</div>
+          <button onClick={function(){setEditingEp(null); setShowForm(true);}}
+            style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"10px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {"\uff0b \u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0"}
+          </button>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+          {monthEps.length === 0 ? (
+            <div style={{textAlign:"center",padding:"56px 24px",color:"#444"}}>
+              <div style={{marginBottom:"16px"}}><Waveform width={200} height={40} bars={40} color={"rgba(255,255,255,0.08)"} /></div>
+              <div style={{fontSize:"15px",marginBottom:"8px",color:"#666"}}>{"\u307e\u3060\u30a8\u30d4\u30bd\u30fc\u30c9\u304c\u3042\u308a\u307e\u305b\u3093"}</div>
+              <div style={{fontSize:"13px"}}>{"\u300c\u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0\u300d\u304b\u3089" + getMonthLabel(currentMonth) + "\u306e\u30b3\u30f3\u30c6\u30f3\u30c4\u8a08\u753b\u3092\u59cb\u3081\u307e\u3057\u3087\u3046"}</div>
+            </div>
+          ) : (
+            monthEps.map(function(ep, i) {
+              return <EpisodeCard key={ep.id} ep={ep} index={i}
+                expanded={expandedId === ep.id}
+                onToggle={function(){setExpandedId(expandedId === ep.id ? null : ep.id)}}
+                onTaskToggle={handleTaskToggle}
+                onEdit={function(ep){setEditingEp(ep); setShowForm(true);}} />
+            })
+          )}
+        </div>
+      </div>
+
+      {showForm && (
+        <EpisodeForm episode={editingEp} month={currentMonth}
+          onSave={handleSave} onDelete={handleDelete}
+          onCancel={function(){setShowForm(false); setEditingEp(null);}} />
+      )}
+    </div>
+  );
+}
+
+var root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));
+</script>
+</body>
+</html>
