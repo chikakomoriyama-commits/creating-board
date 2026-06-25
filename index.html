@@ -9,16 +9,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
-    background: #111;
-    color: #e8e8e8;
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-  }
-  input, select, textarea, button { font-family: inherit; }
-  ::selection { background: rgba(251, 146, 60, 0.3); }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;background:#111;color:#e8e8e8;min-height:100vh;-webkit-font-smoothing:antialiased}
+  input,select,textarea,button{font-family:inherit}
+  ::selection{background:rgba(251,146,60,0.3)}
+  .tab-btn{background:none;border:none;color:#555;padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;transition:color 0.15s;white-space:nowrap}
+  .tab-btn.active{color:#fb923c;border-bottom-color:#fb923c}
+  .tab-btn:hover{color:#999}
 </style>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
@@ -27,391 +24,445 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useCallback } = React;
+const { useState, useCallback, useMemo } = React;
 
-const STORAGE_KEY = "creating-board-episodes";
+var KEYS={episodes:"cb-episodes",cast:"cb-cast",hosts:"cb-hosts",template:"cb-template"};
+function load(k,fb){try{var r=localStorage.getItem(k);return r?JSON.parse(r):fb}catch(e){return fb}}
+function persist(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 
-const STATUSES = [
-  { id: "draft", label: "テーマ検討中", color: "#737373", bg: "rgba(115,115,115,0.15)" },
-  { id: "cast_confirmed", label: "キャスト確定", color: "#2dd4bf", bg: "rgba(45,212,191,0.12)" },
-  { id: "talk_design", label: "トークデザイン中", color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
-  { id: "pre_shared", label: "事前共有済", color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
-  { id: "recorded", label: "収録済み", color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  { id: "naming", label: "名づけ待ち", color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
-  { id: "stock", label: "配信待ち（在庫）", color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
-  { id: "published", label: "配信済み", color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+var DEFAULT_TEMPLATE="Creating\u3078\u3088\u3046\u3053\u305d\uff01\u3053\u306e\u756a\u7d44\u306f\u3001\u81ea\u5206\u306e\u4eba\u751f\u3092\u300c\u5275\u308a\u51fa\u3057\u3066\u3044\u308b\u300d\u4eba\u305f\u3061\u306e\u305f\u3081\u306e\u5b9f\u9a13\u306e\u5834\u3067\u3059\u3002\n\n\u30ed\u30d0\u30fc\u30c8\u30fb\u30d5\u30ea\u30c3\u30c4\u306e\u300eCre\u0061ting\u300f\u3092\u30d2\u30f3\u30c8\u306b\u3001\u79c1\u305f\u3061\u81ea\u8eab\u306e\u4f53\u9a13\u3092\u901a\u3057\u3066\u5275\u9020\u306e\u672c\u8cea\u3092\u63a2\u3063\u3066\u3044\u304d\u307e\u3059\u3002\n\n\u30db\u30b9\u30c8\u306f\u3001{{HOST}}\u3067\u3059\u3002\n\n{{GUESTS}}\n\n\u65e5\u5e38\u306e\u5c0f\u3055\u306a\u6c17\u3065\u304d\u3084\u9078\u629e\u306e\u7a4d\u307f\u91cd\u306d\u304b\u3089\u3069\u3093\u306a\u5275\u9020\u304c\u82bd\u751f\u3048\u308b\u306e\u304b\u3001\u4e00\u7dd2\u306b\u63a2\u3063\u3066\u3044\u304d\u307e\u3057\u3087\u3046\u3002";
+var DEFAULT_HOSTS=[{id:"h1",name:"\u30ed\u30d0\u30fc\u30c8\u30fb\u30d5\u30ea\u30c3\u30c4\u30fb\u30b3\u30f3\u30b5\u30eb\u30c6\u30a3\u30f3\u30b0\u306e\u7530\u6751\u6d0b\u4e00"},{id:"h2",name:"\u69cb\u9020\u30b3\u30f3\u30b5\u30eb\u30bf\u30f3\u30c8\u306e\u68ee\u5c71\u5343\u8cc0\u5b50"}];
+var DEFAULT_CAST=[{id:"c1",name:"\u83ca\u5730\u7f8e\u5e0c",intro:"\u7d44\u7e54\u958b\u767a\u30d5\u30a1\u30b7\u30ea\u30c6\u30fc\u30bf\u30fc\u306e\u83ca\u5730\u7f8e\u5e0c\u3055\u3093\u3002\u6570\u5e74\u524d\u306b\u69cb\u9020\u30a2\u30d7\u30ed\u30fc\u30c1\u306b\u51fa\u4f1a\u3044\u3001\u4eba\u751f\u3092\u30a2\u30fc\u30c8\u306e\u3088\u3046\u306b\u5275\u308a\u3001\u751f\u304d\u308b\u3053\u3068\u306b\u53d6\u308a\u7d44\u3093\u3067\u3044\u307e\u3059\u3002"},{id:"c2",name:"\u6e21\u8fba\u7d00\u5b50",intro:"\u516c\u52d9\u54e1\u3068\u3057\u3066\u591a\u304f\u306e\u4eba\u306e\u4eba\u751f\u3068\u5411\u304d\u5408\u3063\u3066\u304d\u305f\u6e21\u8fba\u7d00\u5b50\u3055\u3093\u3067\u3059\u3002"}];
+
+var MATRIX_COLS=["\u63a2\u6c42","\u69cb\u9020","\u5275\u9020"];
+var MATRIX_ROWS=["\u793e\u4f1a","\u7d44\u7e54","\u95a2\u4fc2","\u500b\u4eba"];
+
+var STATUSES=[
+  {id:"draft",label:"\u30c6\u30fc\u30de\u691c\u8a0e\u4e2d",color:"#737373",bg:"rgba(115,115,115,0.15)"},
+  {id:"cast_confirmed",label:"\u30ad\u30e3\u30b9\u30c8\u78ba\u5b9a",color:"#2dd4bf",bg:"rgba(45,212,191,0.12)"},
+  {id:"talk_design",label:"\u30c8\u30fc\u30af\u30c7\u30b6\u30a4\u30f3\u4e2d",color:"#a78bfa",bg:"rgba(167,139,250,0.12)"},
+  {id:"pre_shared",label:"\u4e8b\u524d\u5171\u6709\u6e08",color:"#60a5fa",bg:"rgba(96,165,250,0.12)"},
+  {id:"recorded",label:"\u53ce\u9332\u6e08\u307f",color:"#fb923c",bg:"rgba(251,146,60,0.12)"},
+  {id:"naming",label:"\u540d\u3065\u3051\u5f85\u3061",color:"#f472b6",bg:"rgba(244,114,182,0.12)"},
+  {id:"stock",label:"\u914d\u4fe1\u5f85\u3061\uff08\u5728\u5eab\uff09",color:"#fbbf24",bg:"rgba(251,191,36,0.12)"},
+  {id:"published",label:"\u914d\u4fe1\u6e08\u307f",color:"#4ade80",bg:"rgba(74,222,128,0.12)"},
+];
+var TASK_TEMPLATES=[
+  {offset:-7,label:"Danna \u306b\u30c8\u30fc\u30af\u30c7\u30b6\u30a4\u30f3\u4f9d\u983c",assignee:"Chica \u2192 Danna"},
+  {offset:-6,label:"\u30b2\u30b9\u30c8\u7d39\u4ecb\u6587\u306e\u6e96\u5099",assignee:"Chica"},
+  {offset:-5,label:"\u30b2\u30b9\u30c8\u3078\u306e\u4e8b\u524d\u5171\u6709\uff08\u7d39\u4ecb\u6587\u30fb\u30d2\u30f3\u30c8\uff09",assignee:"Chica \u2192 \u30b2\u30b9\u30c8"},
+  {offset:-3,label:"\u30b2\u30b9\u30c8\u304c\u554f\u3044\u3092\u8003\u3048\u308b\uff08\u78ba\u8a8d\uff09",assignee:"\u30b2\u30b9\u30c8"},
+  {offset:0,label:"\u53ce\u9332",assignee:"\u5168\u54e1"},
+  {offset:3,label:"\u53ce\u9332\u5f8c\u30bb\u30eb\u30d5\u30c1\u30a7\u30c3\u30af",assignee:"Chica\u30fb\u30b8\u30c0\u30de\u30fbDanna\u30fbYu"},
+  {offset:5,label:"\u30a8\u30d4\u30bd\u30fc\u30c9\u540d\u3065\u3051\u4f9d\u983c",assignee:"Chica \u2192 \u62c5\u5f53\u8005"},
+  {offset:7,label:"\u6982\u8981\u6b04\u4f5c\u6210",assignee:"Chica"},
+  {offset:10,label:"\u914d\u4fe1",assignee:"Chica"},
 ];
 
-const TASK_TEMPLATES = [
-  { offset: -7, label: "Danna にトークデザイン依頼", assignee: "Chica → Danna" },
-  { offset: -6, label: "ゲスト紹介文の準備", assignee: "Chica" },
-  { offset: -5, label: "ゲストへの事前共有（紹介文・ヒント）", assignee: "Chica → ゲスト" },
-  { offset: -3, label: "ゲストが問いを考える（確認）", assignee: "ゲスト" },
-  { offset: 0, label: "収録", assignee: "全員" },
-  { offset: 3, label: "収録後セルフチェック", assignee: "Chica・ジダマ・Danna・Yu" },
-  { offset: 5, label: "エピソード名づけ依頼", assignee: "Chica → 担当者" },
-  { offset: 7, label: "概要欄作成", assignee: "Chica" },
-  { offset: 10, label: "配信", assignee: "Chica" },
-];
-
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
-function formatDate(dateStr) {
-  if (!dateStr) return "\u2014";
-  const d = new Date(dateStr + "T00:00:00");
-  const weekdays = ["\u65e5","\u6708","\u706b","\u6c34","\u6728","\u91d1","\u571f"];
-  return (d.getMonth()+1) + "/" + d.getDate() + "\uff08" + weekdays[d.getDay()] + "\uff09";
-}
-function addDays(dateStr, days) {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-function getMonthKey(date) {
-  return date.getFullYear() + "-" + String(date.getMonth()+1).padStart(2,"0");
-}
-function getMonthLabel(mk) {
-  const p = mk.split("-");
-  return p[0] + "\u5e74 " + parseInt(p[1]) + "\u6708";
-}
-function isOverdue(ds) {
-  if (!ds) return false;
-  const t = new Date(); t.setHours(0,0,0,0);
-  return new Date(ds+"T00:00:00") < t;
-}
-function isToday(ds) {
-  if (!ds) return false;
-  return ds === new Date().toISOString().split("T")[0];
-}
-function daysUntil(ds) {
-  if (!ds) return null;
-  const t = new Date(); t.setHours(0,0,0,0);
-  return Math.round((new Date(ds+"T00:00:00") - t) / 864e5);
-}
-function generateTasks(recDate, existing) {
-  existing = existing || [];
-  return TASK_TEMPLATES.map(function(t) {
-    var ex = existing.find(function(e) { return e.offset === t.offset; });
-    return { offset: t.offset, label: t.label, assignee: t.assignee, date: addDays(recDate, t.offset), done: ex ? ex.done : false };
-  });
-}
-function loadEpisodes() {
-  try { var r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; }
-  catch(e) { return []; }
-}
-function persistEpisodes(eps) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(eps)); } catch(e) { console.error(e); }
+function gid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function fmt(ds){if(!ds)return"\u2014";var d=new Date(ds+"T00:00:00"),w=["\u65e5","\u6708","\u706b","\u6c34","\u6728","\u91d1","\u571f"];return(d.getMonth()+1)+"/"+d.getDate()+"\uff08"+w[d.getDay()]+"\uff09"}
+function addD(ds,n){var d=new Date(ds+"T00:00:00");d.setDate(d.getDate()+n);return d.toISOString().split("T")[0]}
+function mk(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
+function ml(m){var p=m.split("-");return p[0]+"\u5e74 "+parseInt(p[1])+"\u6708"}
+function isOD(ds){if(!ds)return false;var t=new Date();t.setHours(0,0,0,0);return new Date(ds+"T00:00:00")<t}
+function isT(ds){return ds&&ds===new Date().toISOString().split("T")[0]}
+function dU(ds){if(!ds)return null;var t=new Date();t.setHours(0,0,0,0);return Math.round((new Date(ds+"T00:00:00")-t)/864e5)}
+function genTasks(rd,ex){ex=ex||[];return TASK_TEMPLATES.map(function(t){var e=ex.find(function(x){return x.offset===t.offset});return{offset:t.offset,label:t.label,assignee:t.assignee,date:addD(rd,t.offset),done:e?e.done:false}})}
+function buildScript(tpl,host,guests){
+  var gl=guests.length===0?"":guests.length===1?"\u4eca\u65e5\u306e\u30b2\u30b9\u30c8\u306f\u3001"+(guests[0].intro||guests[0].name):"\u4eca\u65e5\u306e\u30b2\u30b9\u30c8\u306f\u3001"+guests[0].intro+"\n\n\u305d\u3057\u3066\u3001"+guests.slice(1).map(function(g){return g.intro||g.name}).join("\n\n\u305d\u3057\u3066\u3001");
+  return tpl.replace("{{HOST}}",host).replace("{{GUESTS}}",gl);
 }
 
-function Waveform({ width, height, bars, color }) {
-  width = width || 120; height = height || 28; bars = bars || 24; color = color || "rgba(251,146,60,0.5)";
-  var barW = width / bars * 0.6;
-  var gap = width / bars;
-  var rects = [];
-  for (var i = 0; i < bars; i++) {
-    var h = Math.max(4, Math.sin(i * 0.7) * height * 0.4 + height * 0.3 + Math.sin(i * 1.3) * height * 0.2);
-    rects.push(
-      React.createElement("rect", { key: i, x: i * gap, y: (height - h) / 2, width: barW, height: h, rx: barW / 2, fill: color, opacity: 0.4 + Math.abs(Math.sin(i * 0.5)) * 0.6 })
-    );
-  }
-  return React.createElement("svg", { width: width, height: height, viewBox: "0 0 " + width + " " + height }, rects);
+var inp={width:"100%",padding:"10px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:"8px",fontSize:"14px",color:"#e8e8e8",outline:"none",boxSizing:"border-box"};
+var lbl={display:"block",fontSize:"11px",fontWeight:600,color:"#888",marginBottom:"5px",textTransform:"uppercase",letterSpacing:"0.05em"};
+
+function Waveform({width,height,bars,color}){
+  width=width||120;height=height||28;bars=bars||24;color=color||"rgba(251,146,60,0.5)";
+  var bW=width/bars*0.6,gap=width/bars,r=[];
+  for(var i=0;i<bars;i++){var h=Math.max(4,Math.sin(i*0.7)*height*0.4+height*0.3+Math.sin(i*1.3)*height*0.2);
+    r.push(<rect key={i} x={i*gap} y={(height-h)/2} width={bW} height={h} rx={bW/2} fill={color} opacity={0.4+Math.abs(Math.sin(i*0.5))*0.6}/>)}
+  return <svg width={width} height={height} viewBox={"0 0 "+width+" "+height}>{r}</svg>;
 }
 
-function EpisodeForm({ episode, month, onSave, onDelete, onCancel }) {
-  const [form, setForm] = useState({
-    theme: episode?.theme || "",
-    cast: episode?.cast || "",
-    recordingDate: episode?.recordingDate || "",
-    status: episode?.status || "draft",
-    notes: episode?.notes || "",
-  });
-  var handleSave = function() {
-    if (!form.theme.trim()) return;
-    var tasks = form.recordingDate ? generateTasks(form.recordingDate, episode?.tasks) : [];
-    onSave({
-      ...(episode || {}), id: episode?.id || generateId(), month: month,
-      theme: form.theme.trim(), cast: form.cast.trim(),
-      recordingDate: form.recordingDate,
-      status: form.recordingDate && form.cast ? (form.status === "draft" ? "cast_confirmed" : form.status) : form.status,
-      tasks: tasks, notes: form.notes,
-    });
-  };
-  var inputStyle = {
-    width: "100%", padding: "10px 12px", background: "#1a1a1a",
-    border: "1px solid #333", borderRadius: "8px", fontSize: "14px",
-    color: "#e8e8e8", outline: "none", boxSizing: "border-box",
-  };
-  var labelStyle = { display: "block", fontSize: "11px", fontWeight: 600, color: "#888", marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.05em" };
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={onCancel}>
-      <div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"440px",border:"1px solid #282828",maxHeight:"90vh",overflowY:"auto"}} onClick={function(e){e.stopPropagation()}}>
-        <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>
-          {episode?.id ? "\u30a8\u30d4\u30bd\u30fc\u30c9\u7de8\u96c6" : "\u65b0\u3057\u3044\u30a8\u30d4\u30bd\u30fc\u30c9"}
-        </div>
-        <div style={{marginBottom:"16px"}}>
-          <label style={labelStyle}>{"\u30c6\u30fc\u30de *"}</label>
-          <input style={inputStyle} value={form.theme} onChange={function(e){setForm({...form, theme: e.target.value})}} placeholder="\u4f8b\uff1a\u69cb\u9020\u7684\u601d\u8003\u3068\u610f\u601d\u6c7a\u5b9a" autoFocus />
-        </div>
-        <div style={{marginBottom:"16px"}}>
-          <label style={labelStyle}>{"\u30ad\u30e3\u30b9\u30c8"}</label>
-          <input style={inputStyle} value={form.cast} onChange={function(e){setForm({...form, cast: e.target.value})}} placeholder="\u4f8b\uff1a\u7530\u4e2d\u3055\u3093" />
-        </div>
-        <div style={{marginBottom:"16px"}}>
-          <label style={labelStyle}>{"\u53ce\u9332\u65e5"}</label>
-          <input style={{...inputStyle, colorScheme:"dark"}} type="date" value={form.recordingDate} onChange={function(e){setForm({...form, recordingDate: e.target.value})}} />
-        </div>
-        <div style={{marginBottom:"16px"}}>
-          <label style={labelStyle}>{"\u30b9\u30c6\u30fc\u30bf\u30b9"}</label>
-          <select style={{...inputStyle, appearance:"auto"}} value={form.status} onChange={function(e){setForm({...form, status: e.target.value})}}>
-            {STATUSES.map(function(st){ return <option key={st.id} value={st.id}>{st.label}</option> })}
-          </select>
-        </div>
-        <div style={{marginBottom:"16px"}}>
-          <label style={labelStyle}>{"\u30e1\u30e2"}</label>
-          <textarea style={{...inputStyle, minHeight:"60px", resize:"vertical"}} value={form.notes} onChange={function(e){setForm({...form, notes: e.target.value})}} placeholder="\u81ea\u7531\u30e1\u30e2" />
-        </div>
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"22px"}}>
-          {episode?.id && (
-            <button style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}
-              onClick={function(){ if(confirm("\u3053\u306e\u30a8\u30d4\u30bd\u30fc\u30c9\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f")) onDelete(episode.id); }}>{"\u524a\u9664"}</button>
-          )}
-          <button style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}} onClick={onCancel}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
-          <button style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}} onClick={handleSave}>{"\u4fdd\u5b58"}</button>
-        </div>
-      </div>
+// ── Matrix Selector (in Episode Form) ──
+function MatrixSelector({value,onChange}){
+  var row=value?value.row:null;
+  var col=value?value.col:null;
+  return(
+    <div>
+      <table style={{width:"100%",borderCollapse:"separate",borderSpacing:"4px"}}>
+        <thead>
+          <tr>
+            <th style={{width:"60px"}}></th>
+            {MATRIX_COLS.map(function(c,ci){return <th key={ci} style={{fontSize:"11px",fontWeight:600,color:"#888",textAlign:"center",padding:"4px"}}>{c}</th>})}
+          </tr>
+        </thead>
+        <tbody>
+          {MATRIX_ROWS.map(function(r,ri){return(
+            <tr key={ri}>
+              <td style={{fontSize:"11px",fontWeight:600,color:"#888",textAlign:"right",paddingRight:"8px"}}>{r}</td>
+              {MATRIX_COLS.map(function(c,ci){
+                var sel=row===ri&&col===ci;
+                return <td key={ci} style={{textAlign:"center"}}>
+                  <button onClick={function(){onChange(sel?null:{row:ri,col:ci})}} style={{
+                    width:"100%",height:"36px",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"16px",
+                    border:sel?"2px solid #fb923c":"1px solid #333",
+                    background:sel?"rgba(251,146,60,0.2)":"#1a1a1a",
+                    color:sel?"#fb923c":"#444",
+                    transition:"all 0.15s",
+                  }}>{sel?"\u25c9":""}</button>
+                </td>
+              })}
+            </tr>
+          )})}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function TaskList({ tasks, onToggle }) {
-  if (!tasks || !tasks.length) return <div style={{color:"#555",fontSize:"13px",padding:"8px 0"}}>{"\u53ce\u9332\u65e5\u3092\u8a2d\u5b9a\u3059\u308b\u3068\u9006\u7b97\u30bf\u30b9\u30af\u304c\u8868\u793a\u3055\u308c\u307e\u3059"}</div>;
-  var done = tasks.filter(function(t){return t.done}).length;
-  var pct = Math.round(done / tasks.length * 100);
-  return (
+// ── Theme Map Heatmap Tab ──
+function ThemeMapView({episodes}){
+  var counts={};
+  var epsByCell={};
+  MATRIX_ROWS.forEach(function(_,ri){MATRIX_COLS.forEach(function(_,ci){
+    var key=ri+"-"+ci; counts[key]=0; epsByCell[key]=[];
+  })});
+  var mapped=0,unmapped=0;
+  episodes.forEach(function(ep){
+    if(ep.matrix&&ep.matrix.row!==null&&ep.matrix.col!==null){
+      var key=ep.matrix.row+"-"+ep.matrix.col;
+      counts[key]=(counts[key]||0)+1;
+      epsByCell[key]=epsByCell[key]||[];
+      epsByCell[key].push(ep);
+      mapped++;
+    } else { unmapped++; }
+  });
+  var maxCount=Math.max(1,...Object.values(counts));
+
+  function cellColor(count){
+    if(count===0)return"#1a1a1a";
+    var intensity=count/maxCount;
+    var r=Math.round(251*intensity);
+    var g=Math.round(146*intensity*0.6);
+    var b=Math.round(60*intensity*0.3);
+    return"rgba("+r+","+g+","+b+","+Math.max(0.15,intensity*0.6)+")";
+  }
+
+  return(
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"14px"}}>
-        <div style={{flex:1,height:"3px",background:"#282828",borderRadius:"2px",overflow:"hidden"}}>
-          <div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#fb923c,#f97316)",borderRadius:"2px",transition:"width 0.3s"}} />
+      <div style={{fontSize:"14px",fontWeight:600,color:"#888",marginBottom:"16px"}}>{"\u30c6\u30fc\u30de\u30de\u30c3\u30d7 \u2014 \u30a8\u30d4\u30bd\u30fc\u30c9\u5206\u5e03"}</div>
+
+      <div style={{display:"flex",gap:"12px",marginBottom:"20px",flexWrap:"wrap"}}>
+        <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}>
+          <div style={{fontSize:"20px",fontWeight:700,color:"#fb923c"}}>{mapped}</div>
+          <div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"\u30de\u30c3\u30d4\u30f3\u30b0\u6e08"}</div>
         </div>
-        <span style={{fontSize:"11px",color:"#666",whiteSpace:"nowrap"}}>{done}/{tasks.length}</span>
+        <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}>
+          <div style={{fontSize:"20px",fontWeight:700,color:"#555"}}>{unmapped}</div>
+          <div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"\u672a\u8a2d\u5b9a"}</div>
+        </div>
       </div>
-      {tasks.map(function(task, i) {
-        var over = !task.done && isOverdue(task.date);
-        var today = isToday(task.date);
-        return (
-          <div key={i} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"9px 0",borderBottom:"1px solid #1f1f1f",fontSize:"13px"}}>
-            <input type="checkbox" checked={task.done} onChange={function(){onToggle(i)}} style={{width:"17px",height:"17px",accentColor:"#fb923c",cursor:"pointer",marginTop:"2px",flexShrink:0}} />
-            <div style={{flex:1}}>
-              <div style={{fontWeight:500, textDecoration: task.done ? "line-through" : "none", color: task.done ? "#555" : over ? "#ef4444" : "#ddd"}}>
-                {task.label}
-                {today && !task.done && <span style={{background:"rgba(251,146,60,0.2)",color:"#fb923c",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u4eca\u65e5"}</span>}
-                {over && <span style={{background:"rgba(239,68,68,0.15)",color:"#ef4444",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u671f\u9650\u8d85\u904e"}</span>}
-              </div>
-              <div style={{fontSize:"11px",color:"#555",marginTop:"2px"}}>
-                {formatDate(task.date)}
-                {task.offset === 0 ? " \u25c9 \u53ce\u9332\u65e5" : task.offset < 0 ? " \uff08\u53ce\u9332" + Math.abs(task.offset) + "\u65e5\u524d\uff09" : " \uff08\u53ce\u9332" + task.offset + "\u65e5\u5f8c\uff09"}
-              </div>
-              <div style={{fontSize:"11px",color:"#fb923c",fontWeight:500,opacity:0.7}}>{task.assignee}</div>
-            </div>
+
+      {/* Heatmap Grid */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"separate",borderSpacing:"4px",minWidth:"320px"}}>
+          <thead>
+            <tr>
+              <th style={{width:"60px"}}></th>
+              {MATRIX_COLS.map(function(c,ci){return <th key={ci} style={{fontSize:"12px",fontWeight:700,color:"#aaa",textAlign:"center",padding:"8px"}}>{c}</th>})}
+            </tr>
+          </thead>
+          <tbody>
+            {MATRIX_ROWS.map(function(r,ri){return(
+              <tr key={ri}>
+                <td style={{fontSize:"12px",fontWeight:700,color:"#aaa",textAlign:"right",paddingRight:"10px",verticalAlign:"top",paddingTop:"12px"}}>{r}</td>
+                {MATRIX_COLS.map(function(c,ci){
+                  var key=ri+"-"+ci;
+                  var count=counts[key];
+                  var eps=epsByCell[key];
+                  return <td key={ci} style={{verticalAlign:"top"}}>
+                    <div style={{
+                      background:cellColor(count),
+                      border:count===0?"1px solid #252525":"1px solid rgba(251,146,60,"+Math.min(0.4,count/maxCount*0.5)+")",
+                      borderRadius:"10px",
+                      padding:"12px",
+                      minHeight:"80px",
+                      transition:"all 0.2s",
+                    }}>
+                      <div style={{fontSize:"20px",fontWeight:700,color:count===0?"#333":"#fb923c",textAlign:"center",marginBottom:"6px"}}>{count}</div>
+                      {eps.map(function(ep,i){return(
+                        <div key={i} style={{fontSize:"10px",color:"#999",lineHeight:"1.4",marginBottom:"3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {ep.theme}
+                        </div>
+                      )})}
+                    </div>
+                  </td>
+                })}
+              </tr>
+            )})}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Insights */}
+      {mapped>=3&&(function(){
+        var emptyCells=[];var fullCells=[];
+        MATRIX_ROWS.forEach(function(r,ri){MATRIX_COLS.forEach(function(c,ci){
+          var key=ri+"-"+ci;
+          if(counts[key]===0)emptyCells.push(MATRIX_ROWS[ri]+" \u00d7 "+MATRIX_COLS[ci]);
+          if(counts[key]>=2)fullCells.push({label:MATRIX_ROWS[ri]+" \u00d7 "+MATRIX_COLS[ci],count:counts[key]});
+        })});
+        if(emptyCells.length===0&&fullCells.length===0)return null;
+        return(
+          <div style={{marginTop:"20px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:"10px",padding:"16px"}}>
+            <div style={{fontSize:"13px",fontWeight:600,color:"#fb923c",marginBottom:"8px"}}>{"\ud83d\udd0d \u30a4\u30f3\u30b5\u30a4\u30c8"}</div>
+            {fullCells.length>0&&<div style={{fontSize:"12px",color:"#ccc",marginBottom:"6px"}}>{"\u96c6\u4e2d\u30a8\u30ea\u30a2\uff1a"+fullCells.map(function(f){return f.label+"("+f.count+"\u672c)"}).join("\u3001")}</div>}
+            {emptyCells.length>0&&<div style={{fontSize:"12px",color:"#999"}}>{"\u307e\u3060\u89e6\u308c\u3066\u3044\u306a\u3044\u9818\u57df\uff1a"+emptyCells.join("\u3001")}</div>}
           </div>
         );
-      })}
+      })()}
     </div>
   );
 }
 
-function EpisodeCard({ ep, index, expanded, onToggle, onTaskToggle, onEdit }) {
-  var st = STATUSES.find(function(s){return s.id === ep.status}) || STATUSES[0];
-  var days = daysUntil(ep.recordingDate);
-  var overdueTasks = ep.tasks ? ep.tasks.filter(function(t){return !t.done && isOverdue(t.date)}).length : 0;
-  var post = ["recorded","naming","stock","published"].indexOf(ep.status) >= 0;
-  var doneTasks = ep.tasks ? ep.tasks.filter(function(t){return t.done}).length : 0;
-  var totalTasks = ep.tasks ? ep.tasks.length : 0;
-  return (
+// ── Cast Manager Tab ──
+function CastManager({cast,setCast,hosts,setHosts,template,setTemplate}){
+  var[editingCast,setEditingCast]=useState(null);
+  var[editingHost,setEditingHost]=useState(null);
+  var[showTpl,setShowTpl]=useState(false);
+  var[tplDraft,setTplDraft]=useState(template);
+  function saveCast(c){if(!c.name.trim())return;c.id=c.id||gid();var ex=cast.find(function(x){return x.id===c.id});setCast(ex?cast.map(function(x){return x.id===c.id?c:x}):cast.concat([c]));setEditingCast(null)}
+  function delCast(id){setCast(cast.filter(function(x){return x.id!==id}));setEditingCast(null)}
+  function saveHost(h){if(!h.name.trim())return;h.id=h.id||gid();var ex=hosts.find(function(x){return x.id===h.id});setHosts(ex?hosts.map(function(x){return x.id===h.id?h:x}):hosts.concat([h]));setEditingHost(null)}
+  function delHost(id){setHosts(hosts.filter(function(x){return x.id!==id}));setEditingHost(null)}
+  return(
+    <div>
+      <div style={{marginBottom:"28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+          <div style={{fontSize:"14px",fontWeight:600,color:"#888"}}>{"\u30db\u30b9\u30c8"}</div>
+          <button onClick={function(){setEditingHost({id:"",name:""})}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u8ffd\u52a0"}</button>
+        </div>
+        {hosts.map(function(h){return <div key={h.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={function(){setEditingHost({...h})}}><span style={{fontSize:"14px",color:"#ddd"}}>{h.name}</span><span style={{fontSize:"11px",color:"#555"}}>{"\u7de8\u96c6"}</span></div>})}
+      </div>
+      <div style={{marginBottom:"28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+          <div style={{fontSize:"14px",fontWeight:600,color:"#888"}}>{"\u30ec\u30ae\u30e5\u30e9\u30fc\u30ad\u30e3\u30b9\u30c8"}</div>
+          <button onClick={function(){setEditingCast({id:"",name:"",intro:""})}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u8ffd\u52a0"}</button>
+        </div>
+        {cast.map(function(c){return <div key={c.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",cursor:"pointer"}} onClick={function(){setEditingCast({...c})}}><div style={{fontSize:"14px",color:"#ddd",marginBottom:"4px"}}>{c.name}</div><div style={{fontSize:"12px",color:"#555",lineHeight:"1.5"}}>{c.intro.length>60?c.intro.slice(0,60)+"\u2026":c.intro}</div></div>})}
+      </div>
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+          <div style={{fontSize:"14px",fontWeight:600,color:"#888"}}>{"\u5c0e\u5165\u539f\u7a3f\u30c6\u30f3\u30d7\u30ec\u30fc\u30c8"}</div>
+          <button onClick={function(){setTplDraft(template);setShowTpl(!showTpl)}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{showTpl?"\u9589\u3058\u308b":"\u7de8\u96c6"}</button>
+        </div>
+        {showTpl?(<div>
+          <div style={{fontSize:"11px",color:"#666",marginBottom:"8px"}}>{"{{HOST}} \u2192 \u30db\u30b9\u30c8\u540d\u3001{{GUESTS}} \u2192 \u30b2\u30b9\u30c8\u7d39\u4ecb\u6587 \u306b\u7f6e\u63db"}</div>
+          <textarea style={{...inp,minHeight:"180px",resize:"vertical",lineHeight:"1.6"}} value={tplDraft} onChange={function(e){setTplDraft(e.target.value)}}/>
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"10px"}}>
+            <button onClick={function(){setShowTpl(false)}} style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"8px 16px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
+            <button onClick={function(){setTemplate(tplDraft);setShowTpl(false)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"8px 16px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\u4fdd\u5b58"}</button>
+          </div>
+        </div>):(<div style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"14px 16px",fontSize:"12px",color:"#555",lineHeight:"1.6",whiteSpace:"pre-wrap"}}>{template.length>200?template.slice(0,200)+"\u2026":template}</div>)}
+      </div>
+      {editingCast&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={function(){setEditingCast(null)}}><div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"440px",border:"1px solid #282828"}} onClick={function(e){e.stopPropagation()}}>
+        <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>{editingCast.id?"\u30ad\u30e3\u30b9\u30c8\u7de8\u96c6":"\u65b0\u3057\u3044\u30ad\u30e3\u30b9\u30c8"}</div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u540d\u524d *"}</label><input style={inp} value={editingCast.name} onChange={function(e){setEditingCast({...editingCast,name:e.target.value})}} autoFocus/></div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u7d39\u4ecb\u6587"}</label><textarea style={{...inp,minHeight:"80px",resize:"vertical",lineHeight:"1.5"}} value={editingCast.intro} onChange={function(e){setEditingCast({...editingCast,intro:e.target.value})}}/></div>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          {editingCast.id&&<button onClick={function(){if(confirm("\u524a\u9664\uff1f"))delCast(editingCast.id)}} style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}>{"\u524a\u9664"}</button>}
+          <button onClick={function(){setEditingCast(null)}} style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
+          <button onClick={function(){saveCast(editingCast)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\u4fdd\u5b58"}</button>
+        </div>
+      </div></div>)}
+      {editingHost&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={function(){setEditingHost(null)}}><div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"440px",border:"1px solid #282828"}} onClick={function(e){e.stopPropagation()}}>
+        <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>{editingHost.id?"\u30db\u30b9\u30c8\u7de8\u96c6":"\u65b0\u3057\u3044\u30db\u30b9\u30c8"}</div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u540d\u524d *"}</label><input style={inp} value={editingHost.name} onChange={function(e){setEditingHost({...editingHost,name:e.target.value})}} autoFocus/></div>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          {editingHost.id&&<button onClick={function(){if(confirm("\u524a\u9664\uff1f"))delHost(editingHost.id)}} style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}>{"\u524a\u9664"}</button>}
+          <button onClick={function(){setEditingHost(null)}} style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
+          <button onClick={function(){saveHost(editingHost)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\u4fdd\u5b58"}</button>
+        </div>
+      </div></div>)}
+    </div>
+  );
+}
+
+// ── Episode Form ──
+function EpisodeForm({episode,month,cast,hosts,template,onSave,onDelete,onCancel}){
+  var[form,setForm]=useState({
+    theme:episode?.theme||"",castIds:episode?.castIds||[],hostId:episode?.hostId||(hosts[0]?.id||""),
+    recordingDate:episode?.recordingDate||"",status:episode?.status||"draft",notes:episode?.notes||"",
+    newCastName:episode?.newCastName||"",matrix:episode?.matrix||null,
+  });
+  var[showScript,setShowScript]=useState(false);
+  var selectedGuests=form.castIds.map(function(id){return cast.find(function(c){return c.id===id})}).filter(Boolean);
+  var selectedHost=hosts.find(function(h){return h.id===form.hostId});
+  var castDisplay=selectedGuests.map(function(g){return g.name}).join("\u3001");
+  if(form.newCastName)castDisplay=castDisplay?(castDisplay+"\u3001"+form.newCastName):form.newCastName;
+  var script="";
+  if(selectedHost){var ag=selectedGuests.slice();if(form.newCastName)ag.push({name:form.newCastName,intro:form.newCastName+"\u3055\u3093\u3067\u3059\u3002"});script=buildScript(template,selectedHost.name,ag)}
+  function handleSave(){
+    if(!form.theme.trim())return;
+    var tasks=form.recordingDate?genTasks(form.recordingDate,episode?.tasks):[];
+    onSave({...(episode||{}),id:episode?.id||gid(),month:month,theme:form.theme.trim(),cast:castDisplay,castIds:form.castIds,hostId:form.hostId,newCastName:form.newCastName,recordingDate:form.recordingDate,status:form.recordingDate&&castDisplay?(form.status==="draft"?"cast_confirmed":form.status):form.status,tasks:tasks,notes:form.notes,script:script,matrix:form.matrix});
+  }
+  function toggleCast(id){var ids=form.castIds.slice();var idx=ids.indexOf(id);if(idx>=0)ids.splice(idx,1);else ids.push(id);setForm({...form,castIds:ids})}
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={onCancel}>
+      <div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"500px",border:"1px solid #282828",maxHeight:"90vh",overflowY:"auto"}} onClick={function(e){e.stopPropagation()}}>
+        <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>{episode?.id?"\u30a8\u30d4\u30bd\u30fc\u30c9\u7de8\u96c6":"\u65b0\u3057\u3044\u30a8\u30d4\u30bd\u30fc\u30c9"}</div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u30c6\u30fc\u30de *"}</label><input style={inp} value={form.theme} onChange={function(e){setForm({...form,theme:e.target.value})}} autoFocus/></div>
+
+        {/* Matrix Selector */}
+        <div style={{marginBottom:"16px"}}>
+          <label style={lbl}>{"\u30c6\u30fc\u30de\u30de\u30c3\u30d7\u306e\u4f4d\u7f6e"}</label>
+          <MatrixSelector value={form.matrix} onChange={function(v){setForm({...form,matrix:v})}}/>
+          {form.matrix&&<div style={{fontSize:"11px",color:"#fb923c",marginTop:"4px"}}>{"\u2192 "+MATRIX_ROWS[form.matrix.row]+" \u00d7 "+MATRIX_COLS[form.matrix.col]}</div>}
+        </div>
+
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u30db\u30b9\u30c8"}</label><select style={{...inp,appearance:"auto"}} value={form.hostId} onChange={function(e){setForm({...form,hostId:e.target.value})}}>{hosts.map(function(h){return <option key={h.id} value={h.id}>{h.name}</option>})}</select></div>
+        <div style={{marginBottom:"16px"}}>
+          <label style={lbl}>{"\u30ec\u30ae\u30e5\u30e9\u30fc\u30ad\u30e3\u30b9\u30c8"}</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
+            {cast.map(function(c){var sel=form.castIds.indexOf(c.id)>=0;return <button key={c.id} onClick={function(){toggleCast(c.id)}} style={{padding:"6px 14px",borderRadius:"20px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:sel?"1px solid #fb923c":"1px solid #333",background:sel?"rgba(251,146,60,0.15)":"#222",color:sel?"#fb923c":"#888"}}>{c.name}{sel?" \u2713":""}</button>})}
+          </div>
+        </div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u65b0\u898f\u30b2\u30b9\u30c8"}</label><input style={inp} value={form.newCastName} onChange={function(e){setForm({...form,newCastName:e.target.value})}} placeholder={"\u4f8b\uff1a\u5c71\u7530\u592a\u90ce\u3055\u3093"}/></div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u53ce\u9332\u65e5"}</label><input style={{...inp,colorScheme:"dark"}} type="date" value={form.recordingDate} onChange={function(e){setForm({...form,recordingDate:e.target.value})}}/></div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u30b9\u30c6\u30fc\u30bf\u30b9"}</label><select style={{...inp,appearance:"auto"}} value={form.status} onChange={function(e){setForm({...form,status:e.target.value})}}>{STATUSES.map(function(st){return <option key={st.id} value={st.id}>{st.label}</option>})}</select></div>
+        <div style={{marginBottom:"16px"}}><label style={lbl}>{"\u30e1\u30e2"}</label><textarea style={{...inp,minHeight:"50px",resize:"vertical"}} value={form.notes} onChange={function(e){setForm({...form,notes:e.target.value})}}/></div>
+        {(form.castIds.length>0||form.newCastName)&&selectedHost&&(
+          <div style={{marginBottom:"16px"}}>
+            <button onClick={function(){setShowScript(!showScript)}} style={{background:"none",border:"none",color:"#fb923c",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>{showScript?"\u25bc \u5c0e\u5165\u539f\u7a3f\u3092\u9589\u3058\u308b":"\u25b6 \u5c0e\u5165\u539f\u7a3f\u3092\u30d7\u30ec\u30d3\u30e5\u30fc"}</button>
+            {showScript&&<div style={{marginTop:"8px",background:"#151515",border:"1px solid #282828",borderRadius:"10px",padding:"16px",fontSize:"13px",color:"#ccc",lineHeight:"1.8",whiteSpace:"pre-wrap"}}>{script}</div>}
+          </div>
+        )}
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"22px"}}>
+          {episode?.id&&<button onClick={function(){if(confirm("\u524a\u9664\uff1f"))onDelete(episode.id)}} style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}>{"\u524a\u9664"}</button>}
+          <button onClick={onCancel} style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}}>{"\u30ad\u30e3\u30f3\u30bb\u30eb"}</button>
+          <button onClick={handleSave} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\u4fdd\u5b58"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Task List & Episode Card (unchanged logic) ──
+function TaskList({tasks,onToggle}){
+  if(!tasks||!tasks.length)return <div style={{color:"#555",fontSize:"13px",padding:"8px 0"}}>{"\u53ce\u9332\u65e5\u3092\u8a2d\u5b9a\u3059\u308b\u3068\u9006\u7b97\u30bf\u30b9\u30af\u304c\u8868\u793a\u3055\u308c\u307e\u3059"}</div>;
+  var done=tasks.filter(function(t){return t.done}).length,pct=Math.round(done/tasks.length*100);
+  return(<div>
+    <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"14px"}}><div style={{flex:1,height:"3px",background:"#282828",borderRadius:"2px",overflow:"hidden"}}><div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#fb923c,#f97316)",borderRadius:"2px",transition:"width 0.3s"}}/></div><span style={{fontSize:"11px",color:"#666",whiteSpace:"nowrap"}}>{done}/{tasks.length}</span></div>
+    {tasks.map(function(task,i){var over=!task.done&&isOD(task.date),today=isT(task.date);return(
+      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"9px 0",borderBottom:"1px solid #1f1f1f",fontSize:"13px"}}>
+        <input type="checkbox" checked={task.done} onChange={function(){onToggle(i)}} style={{width:"17px",height:"17px",accentColor:"#fb923c",cursor:"pointer",marginTop:"2px",flexShrink:0}}/>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:500,textDecoration:task.done?"line-through":"none",color:task.done?"#555":over?"#ef4444":"#ddd"}}>{task.label}{today&&!task.done&&<span style={{background:"rgba(251,146,60,0.2)",color:"#fb923c",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u4eca\u65e5"}</span>}{over&&<span style={{background:"rgba(239,68,68,0.15)",color:"#ef4444",padding:"1px 6px",borderRadius:"4px",fontSize:"10px",fontWeight:700,marginLeft:"6px"}}>{"\u671f\u9650\u8d85\u904e"}</span>}</div>
+          <div style={{fontSize:"11px",color:"#555",marginTop:"2px"}}>{fmt(task.date)}{task.offset===0?" \u25c9 \u53ce\u9332\u65e5":task.offset<0?" \uff08\u53ce\u9332"+Math.abs(task.offset)+"\u65e5\u524d\uff09":" \uff08\u53ce\u9332"+task.offset+"\u65e5\u5f8c\uff09"}</div>
+          <div style={{fontSize:"11px",color:"#fb923c",fontWeight:500,opacity:0.7}}>{task.assignee}</div>
+        </div>
+      </div>
+    )})}
+  </div>);
+}
+
+function EpisodeCard({ep,index,expanded,onToggle,onTaskToggle,onEdit}){
+  var st=STATUSES.find(function(s){return s.id===ep.status})||STATUSES[0];
+  var days=dU(ep.recordingDate),oT=ep.tasks?ep.tasks.filter(function(t){return!t.done&&isOD(t.date)}).length:0;
+  var post=["recorded","naming","stock","published"].indexOf(ep.status)>=0;
+  var doneT=ep.tasks?ep.tasks.filter(function(t){return t.done}).length:0,totT=ep.tasks?ep.tasks.length:0;
+  var[showScript,setShowScript]=useState(false);
+  var matrixLabel=ep.matrix?MATRIX_ROWS[ep.matrix.row]+"\u00d7"+MATRIX_COLS[ep.matrix.col]:null;
+  return(
     <div style={{background:"#181818",borderRadius:"12px",border:"1px solid #252525",overflow:"hidden",cursor:"pointer",boxShadow:expanded?"0 4px 24px rgba(0,0,0,0.3)":"none",transition:"box-shadow 0.2s"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr auto",alignItems:"center",padding:"16px 20px",gap:"12px"}} onClick={onToggle}>
         <div>
-          <div style={{fontSize:"15px",fontWeight:600,color:"#f5f5f5",display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{color:"#555",fontSize:"12px"}}>{"#"+(index+1)}</span>
-            {ep.theme || "\uff08\u30c6\u30fc\u30de\u672a\u8a2d\u5b9a\uff09"}
-          </div>
+          <div style={{fontSize:"15px",fontWeight:600,color:"#f5f5f5",display:"flex",alignItems:"center",gap:"8px"}}><span style={{color:"#555",fontSize:"12px"}}>{"#"+(index+1)}</span>{ep.theme||"\uff08\u30c6\u30fc\u30de\u672a\u8a2d\u5b9a\uff09"}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:"14px",fontSize:"12px",color:"#777",marginTop:"5px"}}>
-            {ep.cast && <span>{"\ud83c\udf99 "+ep.cast}</span>}
-            {ep.recordingDate && (
-              <span style={days !== null && days < 0 && !post ? {color:"#ef4444",fontWeight:600} : {}}>
-                {"\ud83d\udcc5 "+formatDate(ep.recordingDate)}
-                {days !== null && days >= 0 && days <= 3 && !post ? " \uff08\u3042\u3068"+days+"\u65e5\uff09" : ""}
-              </span>
-            )}
-            {totalTasks > 0 && <span style={{color: doneTasks === totalTasks ? "#4ade80" : "#555"}}>{doneTasks+"/"+totalTasks+" tasks"}</span>}
-            {overdueTasks > 0 && <span style={{color:"#ef4444",fontWeight:600}}>{"\u26a0 "+overdueTasks+"\u4ef6\u8d85\u904e"}</span>}
+            {ep.cast&&<span>{"\ud83c\udf99 "+ep.cast}</span>}
+            {ep.recordingDate&&<span style={days!==null&&days<0&&!post?{color:"#ef4444",fontWeight:600}:{}}>{"\ud83d\udcc5 "+fmt(ep.recordingDate)}{days!==null&&days>=0&&days<=3&&!post?" \uff08\u3042\u3068"+days+"\u65e5\uff09":""}</span>}
+            {matrixLabel&&<span style={{color:"#a78bfa"}}>{"\ud83d\uddfa "+matrixLabel}</span>}
+            {totT>0&&<span style={{color:doneT===totT?"#4ade80":"#555"}}>{doneT+"/"+totT+" tasks"}</span>}
+            {oT>0&&<span style={{color:"#ef4444",fontWeight:600}}>{"\u26a0 "+oT+"\u4ef6\u8d85\u904e"}</span>}
           </div>
         </div>
         <span style={{display:"inline-block",padding:"3px 12px",borderRadius:"20px",fontSize:"11px",fontWeight:600,color:st.color,background:st.bg,whiteSpace:"nowrap"}}>{st.label}</span>
       </div>
-      {expanded && (
+      {expanded&&(
         <div style={{borderTop:"1px solid #222",padding:"20px",background:"#151515"}}>
-          {ep.notes && (
-            <div style={{fontSize:"13px",color:"#888",marginBottom:"16px",padding:"10px 14px",background:"#1a1a1a",borderRadius:"8px",borderLeft:"2px solid #fb923c"}}>{ep.notes}</div>
-          )}
-          <div style={{display:"flex",alignItems:"center",gap:"8px",fontSize:"12px",fontWeight:600,color:"#888",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>
-            <span>{"\u9006\u7b97\u30bf\u30b9\u30af"}</span>
-            <div style={{flex:1,height:"1px",background:"#282828"}} />
-          </div>
-          <TaskList tasks={ep.tasks} onToggle={function(i){onTaskToggle(ep.id, i)}} />
-          <div style={{marginTop:"16px"}}>
-            <button style={{background:"#222",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"7px 16px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}
-              onClick={function(e){e.stopPropagation(); onEdit(ep);}}>{"\u7de8\u96c6"}</button>
-          </div>
+          {ep.notes&&<div style={{fontSize:"13px",color:"#888",marginBottom:"16px",padding:"10px 14px",background:"#1a1a1a",borderRadius:"8px",borderLeft:"2px solid #fb923c"}}>{ep.notes}</div>}
+          {ep.script&&(<div style={{marginBottom:"16px"}}><button onClick={function(e){e.stopPropagation();setShowScript(!showScript)}} style={{background:"none",border:"none",color:"#fb923c",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>{showScript?"\u25bc \u5c0e\u5165\u539f\u7a3f\u3092\u9589\u3058\u308b":"\u25b6 \u5c0e\u5165\u539f\u7a3f\u3092\u898b\u308b"}</button>{showScript&&<div style={{marginTop:"8px",background:"#1a1a1a",border:"1px solid #282828",borderRadius:"10px",padding:"16px",fontSize:"13px",color:"#ccc",lineHeight:"1.8",whiteSpace:"pre-wrap"}}>{ep.script}</div>}</div>)}
+          <div style={{display:"flex",alignItems:"center",gap:"8px",fontSize:"12px",fontWeight:600,color:"#888",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}><span>{"\u9006\u7b97\u30bf\u30b9\u30af"}</span><div style={{flex:1,height:"1px",background:"#282828"}}/></div>
+          <TaskList tasks={ep.tasks} onToggle={function(i){onTaskToggle(ep.id,i)}}/>
+          <div style={{marginTop:"16px"}}><button style={{background:"#222",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"7px 16px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}} onClick={function(e){e.stopPropagation();onEdit(ep)}}>{"\u7de8\u96c6"}</button></div>
         </div>
       )}
     </div>
   );
 }
 
-function App() {
-  const [episodes, setEpisodes] = useState(function(){return loadEpisodes()});
-  const [currentMonth, setCurrentMonth] = useState(getMonthKey(new Date()));
-  const [expandedId, setExpandedId] = useState(null);
-  const [editingEp, setEditingEp] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+// ── Main App ──
+function App(){
+  var[episodes,setEpisodes]=useState(function(){return load(KEYS.episodes,[])});
+  var[cast,setCastRaw]=useState(function(){return load(KEYS.cast,DEFAULT_CAST)});
+  var[hosts,setHostsRaw]=useState(function(){return load(KEYS.hosts,DEFAULT_HOSTS)});
+  var[template,setTplRaw]=useState(function(){return load(KEYS.template,DEFAULT_TEMPLATE)});
+  var[month,setMonth]=useState(mk(new Date()));
+  var[expId,setExpId]=useState(null);
+  var[editEp,setEditEp]=useState(null);
+  var[showForm,setShowForm]=useState(false);
+  var[tab,setTab]=useState("episodes");
 
-  var save = function(eps) { setEpisodes(eps); persistEpisodes(eps); };
+  function saveEps(e){setEpisodes(e);persist(KEYS.episodes,e)}
+  function setCast(c){setCastRaw(c);persist(KEYS.cast,c)}
+  function setHosts(h){setHostsRaw(h);persist(KEYS.hosts,h)}
+  function setTemplate(t){setTplRaw(t);persist(KEYS.template,t)}
 
-  var monthEps = episodes.filter(function(ep){return ep.month === currentMonth}).sort(function(a,b){
-    if (a.recordingDate && b.recordingDate) return a.recordingDate.localeCompare(b.recordingDate);
-    if (a.recordingDate) return -1;
-    if (b.recordingDate) return 1;
-    return 0;
-  });
+  var mEps=episodes.filter(function(e){return e.month===month}).sort(function(a,b){if(a.recordingDate&&b.recordingDate)return a.recordingDate.localeCompare(b.recordingDate);if(a.recordingDate)return-1;if(b.recordingDate)return 1;return 0});
+  function prevM(){var d=new Date(month+"-01");d.setMonth(d.getMonth()-1);setMonth(mk(d));setExpId(null)}
+  function nextM(){var d=new Date(month+"-01");d.setMonth(d.getMonth()+1);setMonth(mk(d));setExpId(null)}
+  function handleSave(ep){var ex=episodes.find(function(e){return e.id===ep.id});saveEps(ex?episodes.map(function(e){return e.id===ep.id?ep:e}):episodes.concat([ep]));setShowForm(false);setEditEp(null);setExpId(ep.id)}
+  function handleDel(id){saveEps(episodes.filter(function(e){return e.id!==id}));setShowForm(false);setEditEp(null);setExpId(null)}
+  function handleTT(epId,idx){saveEps(episodes.map(function(ep){if(ep.id!==epId)return ep;var t=ep.tasks.slice();t[idx]={...t[idx],done:!t[idx].done};return{...ep,tasks:t}}))}
 
-  var prevMonth = function() { var d = new Date(currentMonth+"-01"); d.setMonth(d.getMonth()-1); setCurrentMonth(getMonthKey(d)); setExpandedId(null); };
-  var nextMonth = function() { var d = new Date(currentMonth+"-01"); d.setMonth(d.getMonth()+1); setCurrentMonth(getMonthKey(d)); setExpandedId(null); };
+  var alerts=[];episodes.forEach(function(ep){if(!ep.tasks)return;ep.tasks.forEach(function(t){if(!t.done&&(isT(t.date)||isOD(t.date)))alerts.push({...t,episodeTheme:ep.theme})})});
+  var sm={total:mEps.length,recorded:mEps.filter(function(e){return["recorded","naming","stock","published"].indexOf(e.status)>=0}).length,published:mEps.filter(function(e){return e.status==="published"}).length,needs:mEps.filter(function(e){return["draft","cast_confirmed"].indexOf(e.status)>=0}).length};
 
-  var handleSave = function(ep) {
-    var exists = episodes.find(function(e){return e.id === ep.id});
-    save(exists ? episodes.map(function(e){return e.id === ep.id ? ep : e}) : episodes.concat([ep]));
-    setShowForm(false); setEditingEp(null); setExpandedId(ep.id);
-  };
-  var handleDelete = function(id) {
-    save(episodes.filter(function(e){return e.id !== id}));
-    setShowForm(false); setEditingEp(null); setExpandedId(null);
-  };
-  var handleTaskToggle = function(epId, idx) {
-    save(episodes.map(function(ep) {
-      if (ep.id !== epId) return ep;
-      var t = ep.tasks.slice(); t[idx] = {...t[idx], done: !t[idx].done};
-      return {...ep, tasks: t};
-    }));
-  };
-
-  var alerts = [];
-  episodes.forEach(function(ep) {
-    if (!ep.tasks) return;
-    ep.tasks.forEach(function(t) {
-      if (!t.done && (isToday(t.date) || isOverdue(t.date)))
-        alerts.push({...t, episodeTheme: ep.theme});
-    });
-  });
-
-  var sm = {
-    total: monthEps.length,
-    recorded: monthEps.filter(function(e){return ["recorded","naming","stock","published"].indexOf(e.status)>=0}).length,
-    published: monthEps.filter(function(e){return e.status==="published"}).length,
-    needs: monthEps.filter(function(e){return ["draft","cast_confirmed"].indexOf(e.status)>=0}).length,
-  };
-
-  var summaryItems = [
-    { n: sm.total, l: "\u8a08\u753b", c: "#e8e8e8" },
-    { n: sm.recorded, l: "\u53ce\u9332\u6e08", c: "#fb923c" },
-    { n: sm.published, l: "\u914d\u4fe1\u6e08", c: "#4ade80" },
-    { n: sm.needs, l: "\u8981\u5bfe\u5fdc", c: sm.needs > 0 ? "#ef4444" : "#555" },
-  ];
-
-  return (
+  return(
     <div style={{minHeight:"100vh"}}>
-      <div style={{background:"linear-gradient(135deg, #111 0%, #1a1a1a 100%)",padding:"24px 24px 20px",borderBottom:"1px solid #222",position:"sticky",top:0,zIndex:50}}>
+      <div style={{background:"linear-gradient(135deg,#111 0%,#1a1a1a 100%)",padding:"24px 24px 0",borderBottom:"1px solid #222",position:"sticky",top:0,zIndex:50}}>
         <div style={{maxWidth:"800px",margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px",paddingBottom:"16px"}}>
             <div>
-              <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-                <div style={{fontSize:"22px",fontWeight:700,letterSpacing:"-0.02em"}}>
-                  <span style={{color:"#fb923c"}}>Creating</span>
-                  <span style={{color:"#666",fontWeight:400,marginLeft:"8px"}}>Board</span>
-                </div>
-                <Waveform width={80} height={20} bars={16} />
-              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"12px"}}><div style={{fontSize:"22px",fontWeight:700,letterSpacing:"-0.02em"}}><span style={{color:"#fb923c"}}>Creating</span><span style={{color:"#666",fontWeight:400,marginLeft:"8px"}}>Board</span></div><Waveform width={80} height={20} bars={16}/></div>
               <div style={{fontSize:"11px",color:"#555",marginTop:"2px",letterSpacing:"0.04em"}}>PODCAST PRODUCTION MANAGEMENT</div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-              <button onClick={prevMonth} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2190"}</button>
-              <div style={{fontSize:"15px",fontWeight:600,color:"#ccc",minWidth:"110px",textAlign:"center"}}>{getMonthLabel(currentMonth)}</div>
-              <button onClick={nextMonth} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2192"}</button>
-            </div>
+            {tab==="episodes"&&(<div style={{display:"flex",alignItems:"center",gap:"10px"}}><button onClick={prevM} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2190"}</button><div style={{fontSize:"15px",fontWeight:600,color:"#ccc",minWidth:"110px",textAlign:"center"}}>{ml(month)}</div><button onClick={nextM} style={{background:"none",border:"1px solid #333",color:"#777",borderRadius:"8px",padding:"7px 12px",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>{"\u2192"}</button></div>)}
+          </div>
+          <div style={{display:"flex",gap:"0"}}>
+            <button className={"tab-btn"+(tab==="episodes"?" active":"")} onClick={function(){setTab("episodes")}}>{"\ud83c\udf99 \u30a8\u30d4\u30bd\u30fc\u30c9"}</button>
+            <button className={"tab-btn"+(tab==="map"?" active":"")} onClick={function(){setTab("map")}}>{"\ud83d\uddfa\ufe0f \u30c6\u30fc\u30de\u30de\u30c3\u30d7"}</button>
+            <button className={"tab-btn"+(tab==="cast"?" active":"")} onClick={function(){setTab("cast")}}>{"\ud83d\udc65 \u30ad\u30e3\u30b9\u30c8\u30fb\u8a2d\u5b9a"}</button>
           </div>
         </div>
       </div>
-
       <div style={{maxWidth:"800px",margin:"0 auto",padding:"24px 16px"}}>
-        {alerts.length > 0 && (
-          <div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:"10px",padding:"14px 18px",marginBottom:"20px",fontSize:"13px",color:"#fb923c"}}>
-            <strong>{"\u26a1 \u5bfe\u5fdc\u304c\u5fc5\u8981\uff1a"}</strong>
-            {alerts.slice(0,3).map(function(t,i) {
-              return <div key={i} style={{marginTop:"4px",color:"#ccc"}}>{(isOverdue(t.date) ? "\ud83d\udd34" : "\ud83d\udfe1") + " " + t.label + "\uff08" + t.episodeTheme + "\uff09\u2014 " + formatDate(t.date)}</div>
-            })}
-            {alerts.length > 3 && <div style={{marginTop:"4px",color:"#888"}}>{"\u307b\u304b " + (alerts.length-3) + " \u4ef6"}</div>}
-          </div>
-        )}
-
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:"10px",marginBottom:"24px"}}>
-          {summaryItems.map(function(item, i) {
-            return (
-              <div key={i} style={{background:"#181818",borderRadius:"10px",border:"1px solid #222",padding:"14px",textAlign:"center"}}>
-                <div style={{fontSize:"24px",fontWeight:700,color:item.c,fontVariantNumeric:"tabular-nums"}}>{item.n}</div>
-                <div style={{fontSize:"10px",color:"#666",marginTop:"2px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{item.l}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
-          <div style={{fontSize:"14px",fontWeight:600,color:"#777"}}>{getMonthLabel(currentMonth) + " \u306e\u30b3\u30f3\u30c6\u30f3\u30c4"}</div>
-          <button onClick={function(){setEditingEp(null); setShowForm(true);}}
-            style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"10px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-            {"\uff0b \u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0"}
-          </button>
-        </div>
-
-        <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-          {monthEps.length === 0 ? (
-            <div style={{textAlign:"center",padding:"56px 24px",color:"#444"}}>
-              <div style={{marginBottom:"16px"}}><Waveform width={200} height={40} bars={40} color={"rgba(255,255,255,0.08)"} /></div>
-              <div style={{fontSize:"15px",marginBottom:"8px",color:"#666"}}>{"\u307e\u3060\u30a8\u30d4\u30bd\u30fc\u30c9\u304c\u3042\u308a\u307e\u305b\u3093"}</div>
-              <div style={{fontSize:"13px"}}>{"\u300c\u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0\u300d\u304b\u3089" + getMonthLabel(currentMonth) + "\u306e\u30b3\u30f3\u30c6\u30f3\u30c4\u8a08\u753b\u3092\u59cb\u3081\u307e\u3057\u3087\u3046"}</div>
-            </div>
-          ) : (
-            monthEps.map(function(ep, i) {
-              return <EpisodeCard key={ep.id} ep={ep} index={i}
-                expanded={expandedId === ep.id}
-                onToggle={function(){setExpandedId(expandedId === ep.id ? null : ep.id)}}
-                onTaskToggle={handleTaskToggle}
-                onEdit={function(ep){setEditingEp(ep); setShowForm(true);}} />
-            })
-          )}
-        </div>
+        {tab==="episodes"&&(<div>
+          {alerts.length>0&&(<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:"10px",padding:"14px 18px",marginBottom:"20px",fontSize:"13px",color:"#fb923c"}}><strong>{"\u26a1 \u5bfe\u5fdc\u304c\u5fc5\u8981\uff1a"}</strong>{alerts.slice(0,3).map(function(t,i){return <div key={i} style={{marginTop:"4px",color:"#ccc"}}>{(isOD(t.date)?"\ud83d\udd34":"\ud83d\udfe1")+" "+t.label+"\uff08"+t.episodeTheme+"\uff09\u2014 "+fmt(t.date)}</div>})}{alerts.length>3&&<div style={{marginTop:"4px",color:"#888"}}>{"\u307b\u304b "+(alerts.length-3)+" \u4ef6"}</div>}</div>)}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px",marginBottom:"24px"}}>{[{n:sm.total,l:"\u8a08\u753b",c:"#e8e8e8"},{n:sm.recorded,l:"\u53ce\u9332\u6e08",c:"#fb923c"},{n:sm.published,l:"\u914d\u4fe1\u6e08",c:"#4ade80"},{n:sm.needs,l:"\u8981\u5bfe\u5fdc",c:sm.needs>0?"#ef4444":"#555"}].map(function(item,i){return <div key={i} style={{background:"#181818",borderRadius:"10px",border:"1px solid #222",padding:"14px",textAlign:"center"}}><div style={{fontSize:"24px",fontWeight:700,color:item.c,fontVariantNumeric:"tabular-nums"}}>{item.n}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{item.l}</div></div>})}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}><div style={{fontSize:"14px",fontWeight:600,color:"#777"}}>{ml(month)+" \u306e\u30b3\u30f3\u30c6\u30f3\u30c4"}</div><button onClick={function(){setEditEp(null);setShowForm(true)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"10px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0"}</button></div>
+          <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>{mEps.length===0?(<div style={{textAlign:"center",padding:"56px 24px",color:"#444"}}><div style={{marginBottom:"16px"}}><Waveform width={200} height={40} bars={40} color={"rgba(255,255,255,0.08)"}/></div><div style={{fontSize:"15px",marginBottom:"8px",color:"#666"}}>{"\u307e\u3060\u30a8\u30d4\u30bd\u30fc\u30c9\u304c\u3042\u308a\u307e\u305b\u3093"}</div><div style={{fontSize:"13px"}}>{"\u300c\u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0\u300d\u304b\u3089"+ml(month)+"\u306e\u30b3\u30f3\u30c6\u30f3\u30c4\u8a08\u753b\u3092\u59cb\u3081\u307e\u3057\u3087\u3046"}</div></div>):(mEps.map(function(ep,i){return <EpisodeCard key={ep.id} ep={ep} index={i} expanded={expId===ep.id} onToggle={function(){setExpId(expId===ep.id?null:ep.id)}} onTaskToggle={handleTT} onEdit={function(ep){setEditEp(ep);setShowForm(true)}}/>}))}</div>
+        </div>)}
+        {tab==="map"&&<ThemeMapView episodes={episodes}/>}
+        {tab==="cast"&&<CastManager cast={cast} setCast={setCast} hosts={hosts} setHosts={setHosts} template={template} setTemplate={setTemplate}/>}
       </div>
-
-      {showForm && (
-        <EpisodeForm episode={editingEp} month={currentMonth}
-          onSave={handleSave} onDelete={handleDelete}
-          onCancel={function(){setShowForm(false); setEditingEp(null);}} />
-      )}
+      {showForm&&<EpisodeForm episode={editEp} month={month} cast={cast} hosts={hosts} template={template} onSave={handleSave} onDelete={handleDel} onCancel={function(){setShowForm(false);setEditEp(null)}}/>}
     </div>
   );
 }
-
-var root = ReactDOM.createRoot(document.getElementById("root"));
+var root=ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(App));
 </script>
 </body>
