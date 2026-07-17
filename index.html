@@ -49,67 +49,106 @@ var lbl={display:"block",fontSize:"11px",fontWeight:600,color:"#888",marginBotto
 function Waveform({width,height,bars,color}){width=width||120;height=height||28;bars=bars||24;color=color||"rgba(251,146,60,0.5)";var bW=width/bars*0.6,gap=width/bars,r=[];for(var i=0;i<bars;i++){var h=Math.max(4,Math.sin(i*0.7)*height*0.4+height*0.3+Math.sin(i*1.3)*height*0.2);r.push(<rect key={i} x={i*gap} y={(height-h)/2} width={bW} height={h} rx={bW/2} fill={color} opacity={0.4+Math.abs(Math.sin(i*0.5))*0.6}/>)}return <svg width={width} height={height} viewBox={"0 0 "+width+" "+height}>{r}</svg>}
 function MatrixSelector({value,onChange}){var row=value?value.row:null,col=value?value.col:null;return(<table style={{width:"100%",borderCollapse:"separate",borderSpacing:"4px"}}><thead><tr><th style={{width:"60px"}}></th>{MC.map(function(c,ci){return <th key={ci} style={{fontSize:"11px",fontWeight:600,color:"#888",textAlign:"center",padding:"4px"}}>{c}</th>})}</tr></thead><tbody>{MR.map(function(r,ri){return(<tr key={ri}><td style={{fontSize:"11px",fontWeight:600,color:"#888",textAlign:"right",paddingRight:"8px"}}>{r}</td>{MC.map(function(c,ci){var sel=row===ri&&col===ci;return <td key={ci} style={{textAlign:"center"}}><button onClick={function(){onChange(sel?null:{row:ri,col:ci})}} style={{width:"100%",height:"36px",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"16px",border:sel?"2px solid #fb923c":"1px solid #333",background:sel?"rgba(251,146,60,0.2)":"#1a1a1a",color:sel?"#fb923c":"#444",transition:"all 0.15s"}}>{sel?"\u25c9":""}</button></td>})}</tr>)})}</tbody></table>)}
 
-// ── Survey View (アンケート回答一覧) ──
-function SurveyView({cast,onEditCast}){
-  var responded=cast.filter(function(c){return c.exploration_theme||c.specific_question});
-  var notResponded=cast.filter(function(c){return!c.exploration_theme&&!c.specific_question});
+// ── Survey View (アンケート回答一覧・テーマリスト方式) ──
+function epLabel(episodes,epId){
+  var ep=episodes.find(function(e){return e.id===epId});
+  if(!ep)return"（削除済みエピソード）";
+  return(ep.theme||"（テーマ未設定）")+(ep.month?"　"+ml(ep.month):"");
+}
+
+function ThemeStatusBadge({status}){
+  var isUsed=status==="used";
+  return <span style={{fontSize:"10px",fontWeight:600,color:isUsed?"#4ade80":"#fbbf24",background:isUsed?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)",padding:"2px 8px",borderRadius:"8px",whiteSpace:"nowrap"}}>{isUsed?"使用済み":"未使用"}</span>;
+}
+
+function CastThemeBlock({c,themes,episodes,onNewTheme,onEditTheme,onEditCast}){
+  var castThemes=themes.filter(function(t){return t.cast_id===c.id});
+  var isCand=c.cast_status==="candidate";
+  return(<div style={{background:"#181818",border:isCand?"1px solid rgba(167,139,250,0.2)":"1px solid #252525",borderRadius:"12px",padding:"16px",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <div style={{fontSize:"14px",fontWeight:600,color:"#f5f5f5"}}>{c.name}</div>
+        {isCand&&<span style={{fontSize:"10px",fontWeight:600,color:"#a78bfa",background:"rgba(167,139,250,0.12)",padding:"2px 8px",borderRadius:"10px"}}>{"候補"}</span>}
+        <span style={{fontSize:"11px",color:"#555"}}>{castThemes.length+"件"}</span>
+        {onEditCast&&<span onClick={function(){onEditCast(c)}} style={{fontSize:"11px",color:"#666",cursor:"pointer",textDecoration:"underline"}}>{"プロフィール編集"}</span>}
+      </div>
+      <button onClick={function(){onNewTheme(c.id)}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"5px 12px",fontSize:"11px",cursor:"pointer",fontFamily:"inherit"}}>{"＋ テーマ追加"}</button>
+    </div>
+    {castThemes.length===0?(
+      <div style={{fontSize:"12px",color:"#444",padding:"4px 0"}}>{"まだテーマがありません"}</div>
+    ):(
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {castThemes.map(function(t){return(
+          <div key={t.id} onClick={function(){onEditTheme({...t})}} style={{background:"#1a1a1a",border:"1px solid #252525",borderRadius:"8px",padding:"10px 12px",cursor:"pointer"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+              <div style={{fontSize:"13px",color:"#ddd",lineHeight:"1.5",flex:1}}>{t.theme_text}</div>
+              <ThemeStatusBadge status={t.status}/>
+            </div>
+            {t.status==="used"&&t.used_in_episodes&&t.used_in_episodes.length>0&&(
+              <div style={{fontSize:"11px",color:"#666",marginTop:"6px"}}>{"使用回："+t.used_in_episodes.map(function(epId){return epLabel(episodes,epId)}).join("、")}</div>
+            )}
+          </div>
+        )})}
+      </div>
+    )}
+  </div>);
+}
+
+function SurveyView({cast,episodes,themes,onSaveTheme,onDeleteTheme,onEditCast}){
+  var[et,setEt]=useState(null);
   var regulars=cast.filter(function(c){return c.cast_status!=="candidate"});
   var candidates=cast.filter(function(c){return c.cast_status==="candidate"});
+  var respondedIds={};themes.forEach(function(t){respondedIds[t.cast_id]=true});
+  var responded=cast.filter(function(c){return respondedIds[c.id]});
+  var notResponded=cast.filter(function(c){return!respondedIds[c.id]});
+  var usedCount=themes.filter(function(t){return t.status==="used"}).length;
+
+  function newTheme(castId){setEt({id:"",cast_id:castId,theme_text:"",status:"unused",used_in_episodes:[]})}
 
   return(<div>
-    <div style={{fontSize:"14px",fontWeight:600,color:"#888",marginBottom:"16px"}}>{"\u30a2\u30f3\u30b1\u30fc\u30c8\u56de\u7b54\u4e00\u89a7"}</div>
+    <div style={{fontSize:"14px",fontWeight:600,color:"#888",marginBottom:"16px"}}>{"アンケート回答（テーマリスト）"}</div>
 
-    {/* Summary */}
     <div style={{display:"flex",gap:"12px",marginBottom:"20px",flexWrap:"wrap"}}>
-      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:"#4ade80"}}>{responded.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"\u56de\u7b54\u6e08"}</div></div>
-      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:notResponded.length>0?"#fbbf24":"#555"}}>{notResponded.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"\u672a\u56de\u7b54"}</div></div>
-      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:"#a78bfa"}}>{candidates.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"\u5019\u88dc"}</div></div>
+      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:"#4ade80"}}>{responded.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"回答済み"}</div></div>
+      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:notResponded.length>0?"#fbbf24":"#555"}}>{notResponded.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"未回答"}</div></div>
+      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:"#fb923c"}}>{themes.length}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"テーマ総数"}</div></div>
+      <div style={{background:"#181818",borderRadius:"8px",border:"1px solid #222",padding:"12px 16px",textAlign:"center"}}><div style={{fontSize:"20px",fontWeight:700,color:"#60a5fa"}}>{usedCount}</div><div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{"使用済み"}</div></div>
     </div>
 
-    {/* Not responded alert */}
-    {notResponded.length>0&&(<div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:"10px",padding:"14px 18px",marginBottom:"20px",fontSize:"13px",color:"#fbbf24"}}><strong>{"\u26a0 \u672a\u56de\u7b54\uff1a"}</strong><span style={{color:"#ccc",marginLeft:"8px"}}>{notResponded.map(function(c){return c.name}).join("\u3001")}</span></div>)}
+    {notResponded.length>0&&(<div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:"10px",padding:"14px 18px",marginBottom:"20px",fontSize:"13px",color:"#fbbf24"}}><strong>{"⚠ 未回答："}</strong><span style={{color:"#ccc",marginLeft:"8px"}}>{notResponded.map(function(c){return c.name}).join("、")}</span></div>)}
 
-    {/* Response Cards */}
-    {responded.length>0&&(<div>
-      <div style={{fontSize:"12px",fontWeight:600,color:"#666",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"\u56de\u7b54\u5185\u5bb9"}</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"10px",marginBottom:"24px"}}>
-        {responded.map(function(c){
-          var isCand=c.cast_status==="candidate";
-          return(<div key={c.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"12px",padding:"16px",cursor:"pointer",transition:"border-color 0.15s"}} onClick={function(){onEditCast(c)}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-              <div style={{fontSize:"14px",fontWeight:600,color:"#f5f5f5"}}>{c.name}</div>
-              <div style={{display:"flex",gap:"6px"}}>
-                {isCand&&<span style={{fontSize:"10px",fontWeight:600,color:"#a78bfa",background:"rgba(167,139,250,0.12)",padding:"2px 8px",borderRadius:"10px"}}>{"\u5019\u88dc"}</span>}
-                {c.response_date&&<span style={{fontSize:"10px",color:"#555"}}>{fmt(c.response_date)}</span>}
-              </div>
-            </div>
-            <div style={{marginBottom:"10px"}}>
-              <div style={{fontSize:"10px",fontWeight:600,color:"#fb923c",marginBottom:"4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"\u63a2\u7a76\u3057\u305f\u3044\u3053\u3068"}</div>
-              <div style={{fontSize:"13px",color:"#ccc",lineHeight:"1.6"}}>{c.exploration_theme||<span style={{color:"#444"}}>{"\u672a\u8a18\u5165"}</span>}</div>
-            </div>
-            <div>
-              <div style={{fontSize:"10px",fontWeight:600,color:"#60a5fa",marginBottom:"4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"\u5177\u4f53\u7684\u306a\u8cea\u554f"}</div>
-              <div style={{fontSize:"13px",color:"#ccc",lineHeight:"1.6"}}>{c.specific_question||<span style={{color:"#444"}}>{"\u672a\u8a18\u5165"}</span>}</div>
-            </div>
-          </div>)
-        })}
-      </div>
+    <div style={{fontSize:"12px",fontWeight:600,color:"#666",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"レギュラーキャスト"}</div>
+    {regulars.map(function(c){return <CastThemeBlock key={c.id} c={c} themes={themes} episodes={episodes} onNewTheme={newTheme} onEditTheme={setEt} onEditCast={onEditCast}/>})}
+
+    {candidates.length>0&&(<div>
+      <div style={{fontSize:"12px",fontWeight:600,color:"#a78bfa",marginBottom:"10px",marginTop:"20px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"キャスト候補"}</div>
+      {candidates.map(function(c){return <CastThemeBlock key={c.id} c={c} themes={themes} episodes={episodes} onNewTheme={newTheme} onEditTheme={setEt} onEditCast={onEditCast}/>})}
     </div>)}
 
-    {/* Not responded list */}
-    {notResponded.length>0&&(<div>
-      <div style={{fontSize:"12px",fontWeight:600,color:"#666",marginBottom:"10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{"\u672a\u56de\u7b54"}</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
-        {notResponded.map(function(c){
-          var isCand=c.cast_status==="candidate";
-          return <div key={c.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"10px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}} onClick={function(){onEditCast(c)}}>
-            <span style={{fontSize:"13px",color:"#888"}}>{c.name}</span>
-            {isCand&&<span style={{fontSize:"10px",fontWeight:600,color:"#a78bfa",background:"rgba(167,139,250,0.12)",padding:"2px 6px",borderRadius:"8px"}}>{"\u5019\u88dc"}</span>}
-            <span style={{fontSize:"11px",color:"#555"}}>{"\u2192 \u56de\u7b54\u3092\u5165\u529b"}</span>
-          </div>
-        })}
+    {et&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"16px"}} onClick={function(){setEt(null)}}><div style={{background:"#1a1a1a",borderRadius:"14px",padding:"28px",width:"100%",maxWidth:"480px",border:"1px solid #282828",maxHeight:"90vh",overflowY:"auto"}} onClick={function(e){e.stopPropagation()}}>
+      <div style={{fontSize:"17px",fontWeight:700,marginBottom:"22px",color:"#fff"}}>{et.id?"テーマ編集":"新しいテーマ"}</div>
+      <div style={{marginBottom:"16px"}}><label style={lbl}>{"テーマ / 質問 *"}</label><textarea style={{...inp,minHeight:"80px",resize:"vertical",lineHeight:"1.5"}} value={et.theme_text} onChange={function(e){setEt({...et,theme_text:e.target.value})}} autoFocus placeholder={"探究したいこと・具体的な質問など"}/></div>
+      <div style={{marginBottom:"16px"}}><label style={lbl}>{"ステータス"}</label><select style={{...inp,appearance:"auto"}} value={et.status||"unused"} onChange={function(e){setEt({...et,status:e.target.value})}}><option value="unused">{"未使用"}</option><option value="used">{"使用済み"}</option></select></div>
+      {et.status==="used"&&(<div style={{marginBottom:"16px"}}><label style={lbl}>{"使用したエピソード"}</label>
+        <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"8px"}}>
+          {(et.used_in_episodes||[]).map(function(epId){return(
+            <div key={epId} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#1a1a1a",border:"1px solid #282828",borderRadius:"6px",padding:"6px 10px",fontSize:"12px",color:"#ccc"}}>
+              <span>{epLabel(episodes,epId)}</span>
+              <button onClick={function(){setEt({...et,used_in_episodes:et.used_in_episodes.filter(function(x){return x!==epId})})}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"12px",fontFamily:"inherit"}}>{"×"}</button>
+            </div>
+          )})}
+        </div>
+        <select style={{...inp,appearance:"auto"}} value="" onChange={function(e){if(e.target.value){setEt({...et,used_in_episodes:(et.used_in_episodes||[]).concat([e.target.value])})}}}>
+          <option value="">{"＋ エピソードを追加"}</option>
+          {episodes.filter(function(ep){return(et.used_in_episodes||[]).indexOf(ep.id)<0}).map(function(ep){return <option key={ep.id} value={ep.id}>{epLabel(episodes,ep.id)}</option>})}
+        </select>
+      </div>)}
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        {et.id&&<button onClick={function(){if(confirm("削除？")){onDeleteTheme(et.id);setEt(null)}}} style={{background:"none",color:"#ef4444",border:"none",fontSize:"12px",cursor:"pointer",marginRight:"auto",fontFamily:"inherit"}}>{"削除"}</button>}
+        <button onClick={function(){setEt(null)}} style={{background:"#282828",color:"#aaa",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",cursor:"pointer",fontFamily:"inherit"}}>{"キャンセル"}</button>
+        <button onClick={function(){if(!et.theme_text.trim())return;onSaveTheme(et);setEt(null)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"8px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"保存"}</button>
       </div>
-    </div>)}
+    </div></div>)}
   </div>);
 }
 
@@ -122,7 +161,7 @@ function ThemeMapView({episodes}){var counts={},epsByCell={};MR.forEach(function
 }
 
 // ── Cast Manager ──
-function CastManager({cast,setCast,hosts,setHosts,template,setTemplate}){
+function CastManager({cast,setCast,hosts,setHosts,template,setTemplate,themes}){
   var[ec,setEc]=useState(null);var[eh,setEh]=useState(null);var[showTpl,setShowTpl]=useState(false);var[tplD,setTplD]=useState(template);
   var regulars=cast.filter(function(c){return c.cast_status!=="candidate"});
   var candidates=cast.filter(function(c){return c.cast_status==="candidate"});
@@ -134,14 +173,14 @@ function CastManager({cast,setCast,hosts,setHosts,template,setTemplate}){
     <div style={{marginBottom:"28px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}><div style={{fontSize:"14px",fontWeight:600,color:"#888"}}>{"\u30db\u30b9\u30c8"}</div><button onClick={function(){setEh({id:"",name:""})}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u8ffd\u52a0"}</button></div>{hosts.map(function(h){return <div key={h.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={function(){setEh({...h})}}><span style={{fontSize:"14px",color:"#ddd"}}>{h.name}</span><span style={{fontSize:"11px",color:"#555"}}>{"\u7de8\u96c6"}</span></div>})}</div>
 
     <div style={{marginBottom:"28px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}><div style={{fontSize:"14px",fontWeight:600,color:"#888"}}>{"\u30ec\u30ae\u30e5\u30e9\u30fc\u30ad\u30e3\u30b9\u30c8"}</div><button onClick={function(){setEc({id:"",name:"",intro:"",exploration_theme:"",specific_question:"",response_date:"",cast_status:"regular"})}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u8ffd\u52a0"}</button></div>
-      {regulars.map(function(c){var hasResp=c.exploration_theme||c.specific_question;return <div key={c.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",cursor:"pointer"}} onClick={function(){setEc({...c})}}>
+      {regulars.map(function(c){var hasResp=themes.some(function(t){return t.cast_id===c.id});return <div key={c.id} style={{background:"#181818",border:"1px solid #252525",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",cursor:"pointer"}} onClick={function(){setEc({...c})}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:"14px",color:"#ddd"}}>{c.name}</div><div style={{display:"flex",gap:"6px",alignItems:"center"}}>{hasResp?<span style={{fontSize:"10px",color:"#4ade80",background:"rgba(74,222,128,0.1)",padding:"2px 8px",borderRadius:"8px"}}>{"\u56de\u7b54\u6e08"}</span>:<span style={{fontSize:"10px",color:"#fbbf24",background:"rgba(251,191,36,0.1)",padding:"2px 8px",borderRadius:"8px"}}>{"\u672a\u56de\u7b54"}</span>}<span style={{fontSize:"11px",color:"#555"}}>{"\u7de8\u96c6"}</span></div></div>
         <div style={{fontSize:"12px",color:"#555",lineHeight:"1.5",marginTop:"4px"}}>{c.intro.length>60?c.intro.slice(0,60)+"\u2026":c.intro}</div>
       </div>})}
     </div>
 
     {candidates.length>0&&(<div style={{marginBottom:"28px"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}><div style={{fontSize:"14px",fontWeight:600,color:"#a78bfa"}}>{"\u30ad\u30e3\u30b9\u30c8\u5019\u88dc"}</div><button onClick={function(){setEc({id:"",name:"",intro:"",exploration_theme:"",specific_question:"",response_date:"",cast_status:"candidate"})}} style={{background:"#282828",color:"#aaa",border:"1px solid #333",borderRadius:"8px",padding:"6px 14px",fontSize:"12px",cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u5019\u88dc\u8ffd\u52a0"}</button></div>
-      {candidates.map(function(c){var hasResp=c.exploration_theme||c.specific_question;return <div key={c.id} style={{background:"#181818",border:"1px solid rgba(167,139,250,0.2)",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",cursor:"pointer"}} onClick={function(){setEc({...c})}}>
+      {candidates.map(function(c){var hasResp=themes.some(function(t){return t.cast_id===c.id});return <div key={c.id} style={{background:"#181818",border:"1px solid rgba(167,139,250,0.2)",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",cursor:"pointer"}} onClick={function(){setEc({...c})}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:"14px",color:"#ddd"}}>{c.name}</div><div style={{display:"flex",gap:"6px",alignItems:"center"}}>{hasResp?<span style={{fontSize:"10px",color:"#4ade80",background:"rgba(74,222,128,0.1)",padding:"2px 8px",borderRadius:"8px"}}>{"\u56de\u7b54\u6e08"}</span>:<span style={{fontSize:"10px",color:"#555"}}>{"\u672a\u56de\u7b54"}</span>}<span style={{fontSize:"11px",color:"#555"}}>{"\u7de8\u96c6"}</span></div></div>
       </div>})}
     </div>)}
@@ -197,14 +236,16 @@ function EpisodeCard({ep,index,expanded,onToggle,onTaskToggle,onEdit}){var st=ST
 
 // ── Main App ──
 function App(){
-  var[episodes,setEpisodes]=useState([]);var[cast,setCast]=useState([]);var[hosts,setHosts]=useState([]);var[template,setTemplate]=useState(DT);var[month,setMonth]=useState(mkM(new Date()));var[expId,setExpId]=useState(null);var[editEp,setEditEp]=useState(null);var[showForm,setShowForm]=useState(false);var[tab,setTab]=useState("episodes");var[loading,setLoading]=useState(true);var[error,setError]=useState(null);
+  var[episodes,setEpisodes]=useState([]);var[cast,setCast]=useState([]);var[themes,setThemes]=useState([]);var[hosts,setHosts]=useState([]);var[template,setTemplate]=useState(DT);var[month,setMonth]=useState(mkM(new Date()));var[expId,setExpId]=useState(null);var[editEp,setEditEp]=useState(null);var[showForm,setShowForm]=useState(false);var[tab,setTab]=useState("episodes");var[loading,setLoading]=useState(true);var[error,setError]=useState(null);
   var[editCastFromSurvey,setEditCastFromSurvey]=useState(null);
 
-  useEffect(function(){async function loadAll(){try{var[epR,cR,hR,sR]=await Promise.all([sb.from("cb_episodes").select("*"),sb.from("cb_cast").select("*"),sb.from("cb_hosts").select("*"),sb.from("cb_settings").select("*")]);if(epR.error)throw epR.error;setEpisodes(epR.data||[]);if(cR.data&&cR.data.length>0){setCast(cR.data)}else{for(var c of DC){await sb.from("cb_cast").upsert(c)}setCast(DC)}if(hR.data&&hR.data.length>0){setHosts(hR.data)}else{for(var h of DH){await sb.from("cb_hosts").upsert(h)}setHosts(DH)}if(sR.data){var tpl=sR.data.find(function(s){return s.key==="template"});if(tpl)setTemplate(tpl.value)}}catch(e){console.error(e);setError("\u30c7\u30fc\u30bf\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557: "+e.message)}setLoading(false)}loadAll()},[]);
+  useEffect(function(){async function loadAll(){try{var[epR,cR,tR,hR,sR]=await Promise.all([sb.from("cb_episodes").select("*"),sb.from("cb_cast").select("*"),sb.from("cb_cast_themes").select("*"),sb.from("cb_hosts").select("*"),sb.from("cb_settings").select("*")]);if(epR.error)throw epR.error;setEpisodes(epR.data||[]);if(cR.data&&cR.data.length>0){setCast(cR.data)}else{for(var c of DC){await sb.from("cb_cast").upsert(c)}setCast(DC)}setThemes(tR.data||[]);if(hR.data&&hR.data.length>0){setHosts(hR.data)}else{for(var h of DH){await sb.from("cb_hosts").upsert(h)}setHosts(DH)}if(sR.data){var tpl=sR.data.find(function(s){return s.key==="template"});if(tpl)setTemplate(tpl.value)}}catch(e){console.error(e);setError("\u30c7\u30fc\u30bf\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557: "+e.message)}setLoading(false)}loadAll()},[]);
 
   async function saveEp(ep){var{error}=await sb.from("cb_episodes").upsert(ep);if(error){console.error(error);return}var ex=episodes.find(function(e){return e.id===ep.id});setEpisodes(ex?episodes.map(function(e){return e.id===ep.id?ep:e}):episodes.concat([ep]))}
   async function delEp(id){await sb.from("cb_episodes").delete().eq("id",id);setEpisodes(episodes.filter(function(e){return e.id!==id}))}
   async function saveCastList(newCast){setCast(newCast);var ids=newCast.map(function(c){return c.id});var toD=cast.filter(function(c){return ids.indexOf(c.id)<0});for(var d of toD){await sb.from("cb_cast").delete().eq("id",d.id)}for(var c of newCast){await sb.from("cb_cast").upsert({id:c.id,name:c.name,intro:c.intro,exploration_theme:c.exploration_theme||"",specific_question:c.specific_question||"",response_date:c.response_date||"",cast_status:c.cast_status||"regular"})}}
+  async function saveTheme(t){t.id=t.id||gid();var payload={id:t.id,cast_id:t.cast_id,theme_text:t.theme_text,status:t.status||"unused",used_in_episodes:t.used_in_episodes||[]};var{error}=await sb.from("cb_cast_themes").upsert(payload);if(error){console.error(error);return}var ex=themes.find(function(x){return x.id===t.id});setThemes(ex?themes.map(function(x){return x.id===t.id?payload:x}):themes.concat([payload]))}
+  async function deleteTheme(id){await sb.from("cb_cast_themes").delete().eq("id",id);setThemes(themes.filter(function(x){return x.id!==id}))}
   async function saveHostList(nw){setHosts(nw);var ids=nw.map(function(h){return h.id});var toD=hosts.filter(function(h){return ids.indexOf(h.id)<0});for(var d of toD){await sb.from("cb_hosts").delete().eq("id",d.id)}for(var h of nw){await sb.from("cb_hosts").upsert({id:h.id,name:h.name})}}
   async function saveTpl(t){setTemplate(t);await sb.from("cb_settings").upsert({key:"template",value:t})}
 
@@ -238,9 +279,9 @@ function App(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}><div style={{fontSize:"14px",fontWeight:600,color:"#777"}}>{ml(month)+" \u306e\u30b3\u30f3\u30c6\u30f3\u30c4"}</div><button onClick={function(){setEditEp(null);setShowForm(true)}} style={{background:"#fb923c",color:"#000",border:"none",borderRadius:"10px",padding:"9px 18px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{"\uff0b \u30a8\u30d4\u30bd\u30fc\u30c9\u8ffd\u52a0"}</button></div>
         <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>{mEps.length===0?(<div style={{textAlign:"center",padding:"56px 24px",color:"#444"}}><div style={{marginBottom:"16px"}}><Waveform width={200} height={40} bars={40} color={"rgba(255,255,255,0.08)"}/></div><div style={{fontSize:"15px",marginBottom:"8px",color:"#666"}}>{"\u307e\u3060\u30a8\u30d4\u30bd\u30fc\u30c9\u304c\u3042\u308a\u307e\u305b\u3093"}</div></div>):(mEps.map(function(ep,i){return <EpisodeCard key={ep.id} ep={ep} index={i} expanded={expId===ep.id} onToggle={function(){setExpId(expId===ep.id?null:ep.id)}} onTaskToggle={handleTT} onEdit={function(ep){setEditEp(ep);setShowForm(true)}}/>}))}</div>
       </div>)}
-      {tab==="survey"&&<SurveyView cast={cast} onEditCast={handleEditCastFromSurvey}/>}
+      {tab==="survey"&&<SurveyView cast={cast} episodes={episodes} themes={themes} onSaveTheme={saveTheme} onDeleteTheme={deleteTheme} onEditCast={handleEditCastFromSurvey}/>}
       {tab==="map"&&<ThemeMapView episodes={episodes}/>}
-      {tab==="cast"&&<CastManager cast={cast} setCast={saveCastList} hosts={hosts} setHosts={saveHostList} template={template} setTemplate={saveTpl}/>}
+      {tab==="cast"&&<CastManager cast={cast} setCast={saveCastList} hosts={hosts} setHosts={saveHostList} template={template} setTemplate={saveTpl} themes={themes}/>}
     </div>
     {showForm&&<EpisodeForm episode={editEp} month={month} cast={cast} hosts={hosts} template={template} onSave={handleSave} onDelete={handleDel} onCancel={function(){setShowForm(false);setEditEp(null)}}/>}
   </div>);
