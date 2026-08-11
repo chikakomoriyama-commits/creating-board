@@ -306,14 +306,22 @@ root.render(React.createElement(App));
 <script>
 (async () => {
   const g = document.getElementById('auth-gate');
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) { g.remove(); return; }
-  document.getElementById('ag-msg').textContent = 'Creating Board を使うにはログインしてください';
-  const b = document.getElementById('ag-btn');
-  b.style.display = '';
-  b.onclick = () => sb.auth.signInWithOAuth({ provider: 'google',
-    options: { redirectTo: location.href.split('#')[0].split('?')[0] } });
-  sb.auth.onAuthStateChange((_e, s) => { if (s) location.reload(); });
+  const msgEl = document.getElementById('ag-msg');
+  try {
+    const gsb = window.supabase.createClient(
+      'https://kzzdsibwjvocbihfqtlv.supabase.co',
+      'sb_publishable_n2qWIOJzVfrzjYANDe4UzA_O4dLVmZ1');
+    const { data: { session } } = await gsb.auth.getSession();
+    if (session) { g.remove(); return; }
+    msgEl.textContent = 'Creating Board を使うにはログインしてください';
+    const b = document.getElementById('ag-btn');
+    b.style.display = '';
+    b.onclick = () => gsb.auth.signInWithOAuth({ provider: 'google',
+      options: { redirectTo: location.href.split('#')[0].split('?')[0] } });
+    gsb.auth.onAuthStateChange((_e, s) => { if (s) location.reload(); });
+  } catch (e) {
+    msgEl.textContent = 'エラー: ' + e.message + ' — 再読み込みしてください';
+  }
 })();
 </script>
 </body>
