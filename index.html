@@ -299,5 +299,31 @@ function App(){
 var root=ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(App));
 </script>
+
+<div id="auth-gate" style="position:fixed;inset:0;background:#111;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#eee;font-family:sans-serif">
+  <div id="ag-msg" style="font-size:15px">ログインを確認しています…</div>
+  <button id="ag-btn" style="display:none;font-size:14px;padding:10px 28px;border-radius:999px;border:none;background:#fb923c;color:#111;font-weight:600;cursor:pointer">Googleでログイン</button>
+</div>
+<script>
+(async () => {
+  const g = document.getElementById('auth-gate');
+  const msgEl = document.getElementById('ag-msg');
+  try {
+    const gsb = window.supabase.createClient(
+      'https://kzzdsibwjvocbihfqtlv.supabase.co',
+      'sb_publishable_n2qWIOJzVfrzjYANDe4UzA_O4dLVmZ1');
+    const { data: { session } } = await gsb.auth.getSession();
+    if (session) { g.remove(); return; }
+    msgEl.textContent = 'Creating Board を使うにはログインしてください';
+    const b = document.getElementById('ag-btn');
+    b.style.display = '';
+    b.onclick = () => gsb.auth.signInWithOAuth({ provider: 'google',
+      options: { redirectTo: location.href.split('#')[0].split('?')[0] } });
+    gsb.auth.onAuthStateChange((_e, s) => { if (s) location.reload(); });
+  } catch (e) {
+    msgEl.textContent = 'エラー: ' + e.message + ' — 再読み込みしてください';
+  }
+})();
+</script>
 </body>
 </html>
